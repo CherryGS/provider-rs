@@ -1,0 +1,6 @@
+/target/
+/project-doc/
+
+# Pre-existing agent skill installations; each is its own Git repository.
+/.agents/skills/
+/.claude/skills/
