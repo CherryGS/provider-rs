@@ -3,4 +3,9 @@ name = "provider"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+codex = ["dep:provider-codex"]
+
 [dependencies]
+provider-codex = { path = "../domain/codex", optional = true }

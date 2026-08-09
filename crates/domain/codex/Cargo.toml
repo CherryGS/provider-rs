@@ -1,0 +1,11 @@
+[package]
+name = "provider-codex"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+reqwest.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
