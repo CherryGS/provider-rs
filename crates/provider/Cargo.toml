@@ -4,8 +4,23 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = []
-codex = ["dep:provider-codex"]
+default = ["codex"]
+codex = [
+    "dep:provider-codex",
+    "dep:reqwest",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:tokio",
+]
 
 [dependencies]
 provider-codex = { path = "../domain/codex", optional = true }
+reqwest = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[[bin]]
+name = "provider"
+path = "src/main.rs"
+required-features = ["codex"]

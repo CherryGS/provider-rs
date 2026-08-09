@@ -1,5 +1,5 @@
 use reqwest::{Client, StatusCode};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{error, fmt};
 
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/wham/usage";
@@ -11,7 +11,7 @@ pub struct Credentials<'a> {
     pub account_id: &'a str,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Usage {
     pub plan_type: String,
     pub rate_limit: Option<RateLimit>,
@@ -22,7 +22,7 @@ pub struct Usage {
     pub rate_limit_reset_credits: Option<RateLimitResetCredits>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct RateLimit {
     pub allowed: bool,
     pub limit_reached: bool,
@@ -30,7 +30,7 @@ pub struct RateLimit {
     pub secondary_window: Option<RateLimitWindow>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct RateLimitWindow {
     pub used_percent: i32,
     pub limit_window_seconds: i64,
@@ -38,20 +38,20 @@ pub struct RateLimitWindow {
     pub reset_at: i64,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Credits {
     pub has_credits: bool,
     pub unlimited: bool,
     pub balance: Option<String>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct SpendControl {
     pub reached: bool,
     pub individual_limit: Option<SpendControlLimit>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct SpendControlLimit {
     pub source: Option<String>,
     pub limit: String,
@@ -63,20 +63,20 @@ pub struct SpendControlLimit {
     pub reset_at: i64,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct AdditionalRateLimit {
     pub limit_name: String,
     pub metered_feature: String,
     pub rate_limit: Option<RateLimit>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct RateLimitReachedType {
     #[serde(rename = "type")]
     pub kind: RateLimitReachedKind,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum RateLimitReachedKind {
     RateLimitReached,
@@ -88,7 +88,7 @@ pub enum RateLimitReachedKind {
     Unknown,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct RateLimitResetCredits {
     pub available_count: i64,
 }
