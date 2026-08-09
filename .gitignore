@@ -2,5 +2,7 @@
 /project-doc/
 
 # Pre-existing agent skill installations; each is its own Git repository.
-/.agents/
-/.claude/
+# `.claude` is a directory junction to `.agents`; no trailing slash, so the
+# pattern matches the link itself as well as the real directory.
+/.agents
+/.claude
