@@ -26,3 +26,7 @@ rust-test-all:
     cargo nextest run --workspace {{ nextest_args }}
 
 rust-finalize: rust-clippy-fix rust-fmt rust-fmt-check rust-lint rust-test-all
+
+codex-monitor-prepare:
+    cargo build --package provider --locked
+    New-Item -ItemType Directory -Force -Path "target/reset-monitor" | Out-Null; Copy-Item -LiteralPath "target/debug/provider.exe" -Destination "target/reset-monitor/provider.exe" -Force
