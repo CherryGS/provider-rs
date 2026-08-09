@@ -1,6 +1,9 @@
 #[cfg(feature = "anthropic")]
 pub use provider_anthropic as anthropic;
 
+#[cfg(feature = "civitai")]
+pub use provider_civitai as civitai;
+
 #[cfg(feature = "codex")]
 pub use provider_codex as codex;
 

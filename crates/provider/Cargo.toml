@@ -6,6 +6,7 @@ edition = "2024"
 [features]
 default = ["codex"]
 anthropic = ["dep:provider-anthropic"]
+civitai = ["dep:provider-civitai"]
 codex = [
     "dep:provider-codex",
     "dep:reqwest",
@@ -20,6 +21,7 @@ volcengine = ["dep:provider-volcengine"]
 
 [dependencies]
 provider-anthropic = { path = "../domain/anthropic", optional = true }
+provider-civitai = { path = "../domain/civitai", optional = true }
 provider-codex = { path = "../domain/codex", optional = true }
 provider-deepseek = { path = "../domain/deepseek", optional = true }
 provider-openai = { path = "../domain/openai", optional = true }

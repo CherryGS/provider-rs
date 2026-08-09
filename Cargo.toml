@@ -3,8 +3,9 @@ resolver = "3"
 members = ["crates/provider", "crates/domain/*"]
 
 [workspace.dependencies]
+bytes = "1"
 hmac = "0.12"
-reqwest = { version = "0.13.4", features = ["json", "stream"] }
+reqwest = { version = "0.13.4", features = ["json", "query", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
