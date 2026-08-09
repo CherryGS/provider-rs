@@ -3,9 +3,12 @@ resolver = "3"
 members = ["crates/provider", "crates/domain/*"]
 
 [workspace.dependencies]
+hmac = "0.12"
 reqwest = { version = "0.13.4", features = ["json", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
+time = { version = "0.3", features = ["formatting", "macros"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [profile.dev]
