@@ -5,4 +5,5 @@ members = ["crates/provider", "crates/domain/*"]
 [workspace.dependencies]
 reqwest = { version = "0.13.4", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
