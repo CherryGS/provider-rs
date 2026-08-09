@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 default = ["codex"]
+anthropic = ["dep:provider-anthropic"]
 codex = [
     "dep:provider-codex",
     "dep:reqwest",
@@ -16,6 +17,7 @@ openai = ["dep:provider-openai"]
 volcengine = ["dep:provider-volcengine"]
 
 [dependencies]
+provider-anthropic = { path = "../domain/anthropic", optional = true }
 provider-codex = { path = "../domain/codex", optional = true }
 provider-openai = { path = "../domain/openai", optional = true }
 provider-volcengine = { path = "../domain/volcengine", optional = true }

@@ -785,9 +785,20 @@ dependencies = [
 name = "provider"
 version = "0.1.0"
 dependencies = [
+ "provider-anthropic",
  "provider-codex",
  "provider-openai",
  "provider-volcengine",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "provider-anthropic"
+version = "0.1.0"
+dependencies = [
  "reqwest",
  "serde",
  "serde_json",

@@ -1,0 +1,13 @@
+pub mod capability;
+mod client;
+
+pub use client::Client;
+
+#[cfg(test)]
+mod test_support;
+
+/// Caller-owned Anthropic API credentials.
+#[derive(Clone, Copy, Debug)]
+pub struct Credentials<'a> {
+    pub api_key: &'a str,
+}
