@@ -1,5 +1,5 @@
 set quiet
-set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
+set windows-shell := ["pwsh", "-NoLogo", "-NoProfile", "-Command"]
 
 clippy_lints := "-D warnings -D clippy::expect_used -D clippy::unwrap_used"
 nextest_args := "--all-features --locked --no-fail-fast --no-tests pass --status-level none --final-status-level fail --failure-output final --success-output never --show-progress none"
