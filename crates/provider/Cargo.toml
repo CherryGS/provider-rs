@@ -14,12 +14,14 @@ codex = [
     "dep:tokio",
 ]
 openai = ["dep:provider-openai"]
+siliconflow = ["dep:provider-siliconflow"]
 volcengine = ["dep:provider-volcengine"]
 
 [dependencies]
 provider-anthropic = { path = "../domain/anthropic", optional = true }
 provider-codex = { path = "../domain/codex", optional = true }
 provider-openai = { path = "../domain/openai", optional = true }
+provider-siliconflow = { path = "../domain/siliconflow", optional = true }
 provider-volcengine = { path = "../domain/volcengine", optional = true }
 reqwest = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }

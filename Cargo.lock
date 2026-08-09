@@ -788,6 +788,7 @@ dependencies = [
  "provider-anthropic",
  "provider-codex",
  "provider-openai",
+ "provider-siliconflow",
  "provider-volcengine",
  "reqwest",
  "serde",
@@ -817,6 +818,16 @@ dependencies = [
 
 [[package]]
 name = "provider-openai"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "provider-siliconflow"
 version = "0.1.0"
 dependencies = [
  "reqwest",
