@@ -12,10 +12,12 @@ codex = [
     "dep:serde_json",
     "dep:tokio",
 ]
+openai = ["dep:provider-openai"]
 volcengine = ["dep:provider-volcengine"]
 
 [dependencies]
 provider-codex = { path = "../domain/codex", optional = true }
+provider-openai = { path = "../domain/openai", optional = true }
 provider-volcengine = { path = "../domain/volcengine", optional = true }
 reqwest = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
