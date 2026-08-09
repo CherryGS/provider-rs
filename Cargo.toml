@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/provider", "crates/domain/*"]
 
 [workspace.dependencies]
-reqwest = { version = "0.13.4", features = ["json"] }
+reqwest = { version = "0.13.4", features = ["json", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
