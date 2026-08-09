@@ -32,20 +32,23 @@ while ($true) {
     $timestamp = [DateTimeOffset]::UtcNow.ToString("o")
 
     try {
-        $rawOutput = & $ProviderCliPath codex usage $AuthPath 2>&1
+        $errorMessage = "provider CLI request failed"
+        $rawOutput = & $ProviderCliPath codex usage $AuthPath 2>$null
         $exitCode = $LASTEXITCODE
         $output = ($rawOutput | Out-String).Trim()
         if ($exitCode -ne 0) {
-            throw "provider CLI exited with code ${exitCode}: $output"
+            throw $errorMessage
         }
 
+        $errorMessage = "provider CLI returned invalid JSON"
         $response = ConvertFrom-Json -InputObject $output
         $rawUsedPercent = $response.rate_limit.primary_window.used_percent
-        $usedPercent = 0
-        if ($null -eq $rawUsedPercent -or
-            -not [int]::TryParse([string]$rawUsedPercent, [ref]$usedPercent)) {
-            throw "response has no numeric rate_limit.primary_window.used_percent"
+        $errorMessage = "response has no numeric rate_limit.primary_window.used_percent"
+        if ($null -eq $rawUsedPercent -or $rawUsedPercent -isnot [ValueType] -or
+            $rawUsedPercent -is [bool]) {
+            throw $errorMessage
         }
+        $usedPercent = [decimal]$rawUsedPercent
 
         if ($usedPercent -eq 0) {
             Write-Output "CODEX_RATE|state=RESET|sample=$sample|at=$timestamp|used_percent=0"
@@ -55,11 +58,7 @@ while ($true) {
         Write-Output "CODEX_RATE|state=WAIT|sample=$sample|at=$timestamp|used_percent=$usedPercent|next_seconds=$IntervalSeconds"
     }
     catch {
-        $message = $_.Exception.Message -replace "[\r\n|]+", " "
-        if ($message.Length -gt 240) {
-            $message = $message.Substring(0, 240)
-        }
-        Write-Output "CODEX_RATE|state=ERROR|sample=$sample|at=$timestamp|message=$message|next_seconds=$IntervalSeconds"
+        Write-Output "CODEX_RATE|state=ERROR|sample=$sample|at=$timestamp|message=$errorMessage|next_seconds=$IntervalSeconds"
     }
 
     Start-Sleep -Seconds $IntervalSeconds
