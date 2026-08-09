@@ -13,6 +13,7 @@ codex = [
     "dep:serde_json",
     "dep:tokio",
 ]
+deepseek = ["dep:provider-deepseek"]
 openai = ["dep:provider-openai"]
 siliconflow = ["dep:provider-siliconflow"]
 volcengine = ["dep:provider-volcengine"]
@@ -20,6 +21,7 @@ volcengine = ["dep:provider-volcengine"]
 [dependencies]
 provider-anthropic = { path = "../domain/anthropic", optional = true }
 provider-codex = { path = "../domain/codex", optional = true }
+provider-deepseek = { path = "../domain/deepseek", optional = true }
 provider-openai = { path = "../domain/openai", optional = true }
 provider-siliconflow = { path = "../domain/siliconflow", optional = true }
 provider-volcengine = { path = "../domain/volcengine", optional = true }

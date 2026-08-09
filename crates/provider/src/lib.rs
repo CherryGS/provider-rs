@@ -4,6 +4,9 @@ pub use provider_anthropic as anthropic;
 #[cfg(feature = "codex")]
 pub use provider_codex as codex;
 
+#[cfg(feature = "deepseek")]
+pub use provider_deepseek as deepseek;
+
 #[cfg(feature = "openai")]
 pub use provider_openai as openai;
 
