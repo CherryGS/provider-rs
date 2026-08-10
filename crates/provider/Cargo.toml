@@ -9,6 +9,7 @@ anthropic = ["dep:provider-anthropic"]
 civitai = ["dep:provider-civitai"]
 codex = ["dep:provider-codex"]
 deepseek = ["dep:provider-deepseek"]
+exa = ["dep:provider-exa"]
 openai = ["dep:provider-openai"]
 siliconflow = ["dep:provider-siliconflow"]
 volcengine = ["dep:provider-volcengine"]
@@ -18,6 +19,7 @@ provider-anthropic = { path = "../domain/anthropic", optional = true }
 provider-civitai = { path = "../domain/civitai", optional = true }
 provider-codex = { path = "../domain/codex", optional = true }
 provider-deepseek = { path = "../domain/deepseek", optional = true }
+provider-exa = { path = "../domain/exa", optional = true }
 provider-openai = { path = "../domain/openai", optional = true }
 provider-siliconflow = { path = "../domain/siliconflow", optional = true }
 provider-volcengine = { path = "../domain/volcengine", optional = true }

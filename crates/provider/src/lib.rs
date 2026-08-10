@@ -10,6 +10,9 @@ pub use provider_codex as codex;
 #[cfg(feature = "deepseek")]
 pub use provider_deepseek as deepseek;
 
+#[cfg(feature = "exa")]
+pub use provider_exa as exa;
+
 #[cfg(feature = "openai")]
 pub use provider_openai as openai;
 
