@@ -1,3 +1,8 @@
+//! Unauthenticated Civitai model detail and preview discovery.
+//!
+//! Endpoint behavior follows the official
+//! [Models API](https://developer.civitai.com/site/reference/models).
+
 use std::{error, fmt};
 
 use reqwest::{Client, StatusCode, header};

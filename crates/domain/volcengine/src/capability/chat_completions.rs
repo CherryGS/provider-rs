@@ -1,3 +1,12 @@
+//! Non-streaming Volcengine Ark Chat Completions creation.
+//!
+//! Endpoint behavior follows the official Volcengine Go SDK
+//! [`chat_completion.go`] and its [request and response models] at pinned commit
+//! `57ad072d4f4407a98fe5c85e4c1dfb30af59bfa1`.
+//!
+//! [`chat_completion.go`]: https://github.com/volcengine/volcengine-go-sdk/blob/57ad072d4f4407a98fe5c85e4c1dfb30af59bfa1/service/arkruntime/chat_completion.go
+//! [request and response models]: https://github.com/volcengine/volcengine-go-sdk/blob/57ad072d4f4407a98fe5c85e4c1dfb30af59bfa1/service/arkruntime/model/chat_completion.go
+
 use std::{collections::BTreeMap, error, fmt};
 
 use reqwest::{Client, StatusCode, header};

@@ -1,3 +1,11 @@
+//! SiliconFlow text and vision reranking.
+//!
+//! Endpoint behavior follows the official [global text contract] and
+//! [text-and-vision contract].
+//!
+//! [global text contract]: https://docs.siliconflow.com/en/api-reference/rerank/create-rerank
+//! [text-and-vision contract]: https://docs.siliconflow.cn/cn/api-reference/rerank/create-rerank
+
 use std::{collections::BTreeMap, error, fmt};
 
 use reqwest::{Client, StatusCode, header};

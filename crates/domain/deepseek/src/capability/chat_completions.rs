@@ -1,3 +1,8 @@
+//! Non-streaming DeepSeek Chat Completions creation.
+//!
+//! Endpoint behavior follows the official
+//! [Chat Completions API](https://api-docs.deepseek.com/api/create-chat-completion).
+
 use std::{collections::BTreeMap, error, fmt};
 
 use reqwest::{Client, StatusCode, header};

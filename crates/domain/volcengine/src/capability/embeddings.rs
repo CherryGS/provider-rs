@@ -1,3 +1,12 @@
+//! Volcengine Ark text embedding creation.
+//!
+//! Endpoint behavior follows the official Volcengine Go SDK [`embeddings.go`]
+//! and its [text embedding models] at pinned commit
+//! `57ad072d4f4407a98fe5c85e4c1dfb30af59bfa1`.
+//!
+//! [`embeddings.go`]: https://github.com/volcengine/volcengine-go-sdk/blob/57ad072d4f4407a98fe5c85e4c1dfb30af59bfa1/service/arkruntime/embeddings.go
+//! [text embedding models]: https://github.com/volcengine/volcengine-go-sdk/blob/57ad072d4f4407a98fe5c85e4c1dfb30af59bfa1/service/arkruntime/model/embeddings.go
+
 use std::{collections::BTreeMap, error, fmt};
 
 use reqwest::{Client, StatusCode, header};

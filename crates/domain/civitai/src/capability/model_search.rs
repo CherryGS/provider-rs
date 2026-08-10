@@ -1,3 +1,8 @@
+//! Unauthenticated Civitai model search over the selected `.red` endpoint.
+//!
+//! Query and response behavior follow the official
+//! [Models API](https://developer.civitai.com/site/reference/models).
+
 use std::{collections::BTreeMap, error, fmt};
 
 use reqwest::{Client, StatusCode, header};

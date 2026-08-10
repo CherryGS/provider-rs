@@ -1,3 +1,8 @@
+//! Non-streaming, stateless DeepSeek Responses creation.
+//!
+//! Endpoint behavior follows the official
+//! [Responses API](https://api-docs.deepseek.com/api/create-response).
+
 use std::{collections::BTreeMap, error, fmt};
 
 use reqwest::{Client, StatusCode, header};

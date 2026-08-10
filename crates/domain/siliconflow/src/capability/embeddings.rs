@@ -1,3 +1,11 @@
+//! SiliconFlow text and vision embedding creation.
+//!
+//! Endpoint behavior follows the official [global text contract] and
+//! [text-and-vision contract].
+//!
+//! [global text contract]: https://docs.siliconflow.com/en/api-reference/embeddings/create-embeddings
+//! [text-and-vision contract]: https://docs.siliconflow.cn/cn/api-reference/embeddings/create-embeddings
+
 use std::{collections::BTreeMap, error, fmt};
 
 use reqwest::{Client, StatusCode, header};

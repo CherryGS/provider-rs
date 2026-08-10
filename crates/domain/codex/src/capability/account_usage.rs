@@ -1,3 +1,11 @@
+//! Stateless Codex account usage through the ChatGPT backend.
+//!
+//! Endpoint and payload behavior follow `openai/codex` files
+//! `codex-rs/backend-client/src/client/rate_limit_resets.rs` and
+//! `codex-rs/codex-backend-openapi-models/src/models/` at pinned commit
+//! `c9c6c0daa994109cec50fddcb57d076fdf9e738c`:
+//! <https://github.com/openai/codex/tree/c9c6c0daa994109cec50fddcb57d076fdf9e738c>.
+
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::{error, fmt};

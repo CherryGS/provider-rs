@@ -1,3 +1,11 @@
+//! Retrieval of preview images discovered in Civitai model responses.
+//!
+//! Preview fields follow the official [Model Versions API]. The allowed
+//! production image origin follows Civitai's [pinned host configuration].
+//!
+//! [Model Versions API]: https://developer.civitai.com/site/reference/model-versions
+//! [pinned host configuration]: https://github.com/civitai/civitai/blob/2a2fe66428330a13c84fc2d7f8fb07d3cc61cf23/next.config.mjs
+
 use std::{error, fmt};
 
 use bytes::Bytes;
