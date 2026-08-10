@@ -7,13 +7,7 @@ edition = "2024"
 default = ["codex"]
 anthropic = ["dep:provider-anthropic"]
 civitai = ["dep:provider-civitai"]
-codex = [
-    "dep:provider-codex",
-    "dep:reqwest",
-    "dep:serde",
-    "dep:serde_json",
-    "dep:tokio",
-]
+codex = ["dep:provider-codex"]
 deepseek = ["dep:provider-deepseek"]
 openai = ["dep:provider-openai"]
 siliconflow = ["dep:provider-siliconflow"]
@@ -27,12 +21,3 @@ provider-deepseek = { path = "../domain/deepseek", optional = true }
 provider-openai = { path = "../domain/openai", optional = true }
 provider-siliconflow = { path = "../domain/siliconflow", optional = true }
 provider-volcengine = { path = "../domain/volcengine", optional = true }
-reqwest = { workspace = true, optional = true }
-serde = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true }
-
-[[bin]]
-name = "provider"
-path = "src/main.rs"
-required-features = ["codex"]

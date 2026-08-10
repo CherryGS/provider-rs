@@ -792,10 +792,6 @@ dependencies = [
  "provider-openai",
  "provider-siliconflow",
  "provider-volcengine",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -813,6 +809,17 @@ name = "provider-civitai"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "provider-cli"
+version = "0.1.0"
+dependencies = [
+ "provider",
  "reqwest",
  "serde",
  "serde_json",

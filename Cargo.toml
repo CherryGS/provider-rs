@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/provider", "crates/domain/*"]
+members = ["crates/provider", "crates/provider-cli", "crates/domain/*"]
 
 [workspace.dependencies]
 bytes = "1"
