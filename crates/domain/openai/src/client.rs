@@ -2,7 +2,7 @@ use reqwest::Client as HttpClient;
 
 use crate::{
     Credentials,
-    capability::{chat_completions, embeddings, responses},
+    capability::{chat_completions, embeddings, model_list, responses},
 };
 
 /// Optional convenience client over the independently callable OpenAI capabilities.
@@ -57,6 +57,10 @@ impl Client {
         request: &embeddings::Request,
     ) -> Result<embeddings::Response, embeddings::Error> {
         embeddings::call(&self.http, self.credentials(), request).await
+    }
+
+    pub async fn list_models(&self) -> Result<model_list::Response, model_list::Error> {
+        model_list::call(&self.http, self.credentials()).await
     }
 
     fn credentials(&self) -> Credentials<'_> {

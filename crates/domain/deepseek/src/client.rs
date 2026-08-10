@@ -2,7 +2,7 @@ use reqwest::Client as HttpClient;
 
 use crate::{
     Credentials,
-    capability::{chat_completions, responses},
+    capability::{chat_completions, model_list, responses},
 };
 
 /// Optional convenience client over the independently callable DeepSeek capabilities.
@@ -36,6 +36,10 @@ impl Client {
         request: &responses::Request,
     ) -> Result<responses::Response, responses::Error> {
         responses::call(&self.http, self.credentials(), request).await
+    }
+
+    pub async fn list_models(&self) -> Result<model_list::Response, model_list::Error> {
+        model_list::call(&self.http, self.credentials()).await
     }
 
     fn credentials(&self) -> Credentials<'_> {

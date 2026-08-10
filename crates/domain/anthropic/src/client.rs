@@ -2,7 +2,7 @@ use reqwest::Client as HttpClient;
 
 use crate::{
     Credentials,
-    capability::{messages, token_count},
+    capability::{messages, model_list, token_count},
 };
 
 /// Optional convenience client over the independently callable Anthropic capabilities.
@@ -36,6 +36,13 @@ impl Client {
         request: &token_count::Request,
     ) -> Result<token_count::Response, token_count::Error> {
         token_count::call(&self.http, self.credentials(), request).await
+    }
+
+    pub async fn list_models(
+        &self,
+        request: &model_list::Request,
+    ) -> Result<model_list::Response, model_list::Error> {
+        model_list::call(&self.http, self.credentials(), request).await
     }
 
     fn credentials(&self) -> Credentials<'_> {
