@@ -253,7 +253,7 @@ impl error::Error for Error {
     }
 }
 
-pub async fn create(
+pub async fn call(
     client: &Client,
     credentials: Credentials<'_>,
     request: &Request,
@@ -414,7 +414,7 @@ mod tests {
         let mut request = Request::new("deepseek-v4-flash", vec![Message::user("hello")]);
         request.user_id = Some("private user".to_owned());
 
-        let error = create(&Client::new(), Credentials::new("test-key"), &request)
+        let error = call(&Client::new(), Credentials::new("test-key"), &request)
             .await
             .expect_err("request is invalid");
 

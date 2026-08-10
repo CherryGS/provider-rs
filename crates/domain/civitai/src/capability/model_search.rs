@@ -125,7 +125,7 @@ impl error::Error for Error {
     }
 }
 
-pub async fn search(client: &Client, request: &Request) -> Result<Response, Error> {
+pub async fn call(client: &Client, request: &Request) -> Result<Response, Error> {
     search_at(client, request, ENDPOINT).await
 }
 

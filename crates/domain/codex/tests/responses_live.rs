@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use provider_codex::responses::{Credentials, Reasoning, Request, stream};
+use provider_codex::responses::{Credentials, Reasoning, Request, call};
 use serde::Deserialize;
 use serde_json::json;
 use std::{env, fs};
@@ -55,7 +55,7 @@ async fn streams_response_with_env_auth() {
         context: Some("all_turns".to_string()),
     });
 
-    let mut events = match stream(
+    let mut events = match call(
         &reqwest::Client::new(),
         Credentials {
             access_token: &tokens.access_token,

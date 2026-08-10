@@ -227,7 +227,7 @@ impl error::Error for Error {
     }
 }
 
-pub async fn stream(
+pub async fn call(
     client: &Client,
     credentials: Credentials<'_>,
     request: &Request,

@@ -28,14 +28,14 @@ impl Client {
         &self,
         request: &messages::Request,
     ) -> Result<messages::Response, messages::Error> {
-        messages::create(&self.http, self.credentials(), request).await
+        messages::call(&self.http, self.credentials(), request).await
     }
 
     pub async fn count_message_tokens(
         &self,
         request: &token_count::Request,
     ) -> Result<token_count::Response, token_count::Error> {
-        token_count::count(&self.http, self.credentials(), request).await
+        token_count::call(&self.http, self.credentials(), request).await
     }
 
     fn credentials(&self) -> Credentials<'_> {

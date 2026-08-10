@@ -136,7 +136,7 @@ impl error::Error for Error {
     }
 }
 
-pub async fn get(
+pub async fn call(
     client: &Client,
     credentials: Credentials<'_>,
     request: Request<'_>,

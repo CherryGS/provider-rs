@@ -122,7 +122,7 @@ impl error::Error for Error {
     }
 }
 
-pub async fn get(client: &Client, credentials: Credentials<'_>) -> Result<Response, Error> {
+pub async fn call(client: &Client, credentials: Credentials<'_>) -> Result<Response, Error> {
     let x_date = signing::x_date().map_err(Error::Clock)?;
     execute(client, credentials, ENDPOINT, &x_date).await
 }

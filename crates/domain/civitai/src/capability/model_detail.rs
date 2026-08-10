@@ -60,7 +60,7 @@ impl error::Error for Error {
     }
 }
 
-pub async fn fetch(client: &Client, model_id: u64) -> Result<Model, Error> {
+pub async fn call(client: &Client, model_id: u64) -> Result<Model, Error> {
     fetch_at(client, model_id, ENDPOINT).await
 }
 

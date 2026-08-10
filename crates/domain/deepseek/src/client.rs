@@ -28,14 +28,14 @@ impl Client {
         &self,
         request: &chat_completions::Request,
     ) -> Result<chat_completions::Response, chat_completions::Error> {
-        chat_completions::create(&self.http, self.credentials(), request).await
+        chat_completions::call(&self.http, self.credentials(), request).await
     }
 
     pub async fn create_response(
         &self,
         request: &responses::Request,
     ) -> Result<responses::Response, responses::Error> {
-        responses::create(&self.http, self.credentials(), request).await
+        responses::call(&self.http, self.credentials(), request).await
     }
 
     fn credentials(&self) -> Credentials<'_> {

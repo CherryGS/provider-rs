@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use provider_codex::account_usage::{Credentials, fetch};
+use provider_codex::account_usage::{Credentials, call};
 use serde::Deserialize;
 use std::{env, fs};
 
@@ -38,7 +38,7 @@ async fn fetches_usage_with_env_auth() {
         "Codex auth tokens must contain an access token"
     );
 
-    let usage = fetch(
+    let usage = call(
         &reqwest::Client::new(),
         Credentials {
             access_token: &tokens.access_token,

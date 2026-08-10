@@ -63,7 +63,7 @@ impl error::Error for Error {
     }
 }
 
-pub async fn fetch(client: &Client, preview: &PreviewImage) -> Result<Response, Error> {
+pub async fn call(client: &Client, preview: &PreviewImage) -> Result<Response, Error> {
     let url = validate_url(&preview.url)?;
     fetch_from(client, url).await
 }
@@ -124,7 +124,7 @@ mod tests {
 
     use reqwest::{Client, StatusCode, Url};
 
-    use super::{Error, fetch, fetch_from};
+    use super::{Error, call, fetch_from};
     use crate::{model::PreviewImage, test_support::serve};
 
     fn preview(url: impl Into<String>) -> PreviewImage {
@@ -169,7 +169,7 @@ mod tests {
     #[tokio::test]
     async fn rejects_untrusted_urls_and_non_image_responses() {
         assert!(matches!(
-            fetch(&Client::new(), &preview("https://example.com/preview.jpeg")).await,
+            call(&Client::new(), &preview("https://example.com/preview.jpeg")).await,
             Err(Error::InvalidPreviewUrl)
         ));
 

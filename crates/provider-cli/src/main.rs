@@ -1,4 +1,4 @@
-use provider::codex::account_usage::{Credentials, fetch};
+use provider::codex::account_usage::{Credentials, call};
 use serde::Deserialize;
 use std::{env, fs, io, io::Write, process::ExitCode};
 
@@ -62,7 +62,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             )
         })?;
 
-    let usage = fetch(
+    let usage = call(
         &reqwest::Client::new(),
         Credentials {
             access_token: &tokens.access_token,

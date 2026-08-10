@@ -123,7 +123,7 @@ impl error::Error for Error {
     }
 }
 
-pub async fn fetch(client: &Client, credentials: Credentials<'_>) -> Result<Usage, Error> {
+pub async fn call(client: &Client, credentials: Credentials<'_>) -> Result<Usage, Error> {
     fetch_from(client, credentials, ENDPOINT).await
 }
 
