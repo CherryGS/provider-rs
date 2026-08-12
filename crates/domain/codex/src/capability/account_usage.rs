@@ -62,10 +62,7 @@ pub struct InferredPeriod {
 
 impl RateLimitWindow {
     pub fn used_percent(&self) -> Result<u8, WindowError> {
-        u8::try_from(self.used_percent)
-            .ok()
-            .filter(|percent| *percent <= 100)
-            .ok_or(WindowError::PercentageOutOfRange)
+        checked_percent(self.used_percent)
     }
 
     pub fn remaining_percent(&self) -> Result<u8, WindowError> {
@@ -114,6 +111,13 @@ impl RateLimitWindow {
             reset_at_unix_seconds: reset_at,
         })
     }
+}
+
+pub fn checked_percent(percent: i32) -> Result<u8, WindowError> {
+    u8::try_from(percent)
+        .ok()
+        .filter(|percent| *percent <= 100)
+        .ok_or(WindowError::PercentageOutOfRange)
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]

@@ -129,6 +129,14 @@ impl Usage {
 }
 
 impl UsageWindow {
+    pub const fn new(kind: WindowKind, used_percent: f64, reset_at_ms: i64) -> Self {
+        Self {
+            kind,
+            used_percent,
+            reset_at_ms,
+        }
+    }
+
     pub const fn kind(self) -> WindowKind {
         self.kind
     }
@@ -422,11 +430,7 @@ mod tests {
             })
         );
 
-        let invalid_reset = UsageWindow {
-            kind: WindowKind::Weekly,
-            used_percent: 0.0,
-            reset_at_ms: -1,
-        };
+        let invalid_reset = UsageWindow::new(WindowKind::Weekly, 0.0, -1);
         assert_eq!(
             invalid_reset.reset_at_ms(),
             Err(UsageWindowError::InvalidReset)
