@@ -7,39 +7,29 @@
 use std::{error, fmt};
 
 use reqwest::{Client, StatusCode, header};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
+use super::{EndpointOutcome, ErrorKind, MillisecondPeriod};
+pub use super::{ProviderError, ResponseMetadata};
 use crate::{Credentials, signing};
 
 const ACTION: &str = "GetAFPUsage";
 const ENDPOINT: &str = "https://ark.cn-beijing.volces.com/?Action=GetAFPUsage&Version=2024-01-01";
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Response {
     pub response_metadata: ResponseMetadata,
     pub result: Option<Usage>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct ResponseMetadata {
-    pub request_id: Option<String>,
-    pub action: Option<String>,
-    pub version: Option<String>,
-    pub service: Option<String>,
-    pub region: Option<String>,
-    pub error: Option<ProviderError>,
+impl Response {
+    pub fn into_outcome(self) -> EndpointOutcome<Usage> {
+        EndpointOutcome::from_parts(self.result, self.response_metadata)
+    }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct ProviderError {
-    pub code: String,
-    pub message: String,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Usage {
     pub plan_type: String,
@@ -53,13 +43,114 @@ pub struct Usage {
     pub monthly: QuotaWindow,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct QuotaWindow {
     pub quota: f64,
     pub used: f64,
     pub subscribe_time: i64,
     pub reset_time: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowKind {
+    FiveHour,
+    Daily,
+    Weekly,
+    Monthly,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct WindowRef<'a> {
+    pub kind: WindowKind,
+    pub window: &'a QuotaWindow,
+}
+
+impl Usage {
+    pub fn windows(&self) -> impl ExactSizeIterator<Item = WindowRef<'_>> {
+        [
+            WindowRef {
+                kind: WindowKind::FiveHour,
+                window: &self.five_hour,
+            },
+            WindowRef {
+                kind: WindowKind::Daily,
+                window: &self.daily,
+            },
+            WindowRef {
+                kind: WindowKind::Weekly,
+                window: &self.weekly,
+            },
+            WindowRef {
+                kind: WindowKind::Monthly,
+                window: &self.monthly,
+            },
+        ]
+        .into_iter()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum QuotaWindowError {
+    NonFinite,
+    Negative,
+    ZeroQuota,
+    UsageExceedsQuota,
+    InvalidPeriod,
+}
+
+impl QuotaWindow {
+    /// Computes used percentage from the documented period quota and usage.
+    ///
+    /// `Quota` is the period total and `Used` is the amount consumed according
+    /// to `GetAFPUsage`, updated 2026-05-20:
+    /// <https://www.volcengine.com/docs/82379/2479847>
+    pub fn used_percent(&self) -> Result<f64, QuotaWindowError> {
+        self.validate_amounts()?;
+        Ok(self.used / self.quota * 100.0)
+    }
+
+    pub fn remaining_percent(&self) -> Result<f64, QuotaWindowError> {
+        Ok(100.0 - self.used_percent()?)
+    }
+
+    /// Returns the provider timestamps as a validated Unix-millisecond period.
+    ///
+    /// Timestamp units and field meaning come from the `GetAFPUsage` contract:
+    /// <https://www.volcengine.com/docs/82379/2479847>
+    pub fn period(&self) -> Result<MillisecondPeriod, QuotaWindowError> {
+        if self.subscribe_time <= 0 || self.reset_time <= self.subscribe_time {
+            return Err(QuotaWindowError::InvalidPeriod);
+        }
+        Ok(MillisecondPeriod {
+            start_ms: self.subscribe_time,
+            reset_ms: self.reset_time,
+        })
+    }
+
+    pub const fn subscribe_time_ms(&self) -> i64 {
+        self.subscribe_time
+    }
+
+    pub const fn reset_time_ms(&self) -> i64 {
+        self.reset_time
+    }
+
+    fn validate_amounts(&self) -> Result<(), QuotaWindowError> {
+        if !self.quota.is_finite() || !self.used.is_finite() {
+            return Err(QuotaWindowError::NonFinite);
+        }
+        if self.quota < 0.0 || self.used < 0.0 {
+            return Err(QuotaWindowError::Negative);
+        }
+        if self.quota == 0.0 {
+            return Err(QuotaWindowError::ZeroQuota);
+        }
+        if self.used > self.quota {
+            return Err(QuotaWindowError::UsageExceedsQuota);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -79,6 +170,17 @@ pub enum Error {
 }
 
 impl Error {
+    pub const fn kind(&self) -> ErrorKind {
+        match self {
+            Self::InvalidCredentials(_) => ErrorKind::InvalidCredentials,
+            Self::Clock(_) => ErrorKind::Clock,
+            Self::Signing => ErrorKind::Signing,
+            Self::Exchange(_) => ErrorKind::Transport,
+            Self::Response { .. } => ErrorKind::HttpResponse,
+            Self::Decode { .. } => ErrorKind::Decode,
+        }
+    }
+
     pub fn status(&self) -> Option<StatusCode> {
         match self {
             Self::Response { status, .. } => Some(*status),
@@ -199,10 +301,16 @@ mod tests {
             .await
             .expect("request succeeds");
 
-        let usage = response.result.expect("usage result");
+        let usage = match response.into_outcome() {
+            EndpointOutcome::Success { data, .. } => data,
+            outcome => panic!("unexpected outcome: {outcome:?}"),
+        };
         assert_eq!(usage.plan_type, "Large");
         assert_eq!(usage.five_hour.used, 125.5);
         assert_eq!(usage.monthly.quota, 80_000.0);
+        assert_eq!(usage.five_hour.used_percent(), Ok(12.55));
+        assert_eq!(usage.five_hour.remaining_percent(), Ok(87.45));
+        assert_eq!(usage.windows().len(), 4);
 
         let request = requests.recv().expect("captured request");
         let (headers, body) = request.split_once("\r\n\r\n").expect("HTTP request");
@@ -229,6 +337,41 @@ mod tests {
         assert_eq!(error.status(), Some(StatusCode::TOO_MANY_REQUESTS));
         assert_eq!(error.raw_body(), Some(r#"{"error":"limited"}"#));
         requests.recv().expect("captured request");
+    }
+
+    #[test]
+    fn rejects_invalid_quota_values_and_periods() {
+        let window = |quota, used| QuotaWindow {
+            quota,
+            used,
+            subscribe_time: 1_000,
+            reset_time: 2_000,
+        };
+
+        assert_eq!(
+            window(0.0, 0.0).used_percent(),
+            Err(QuotaWindowError::ZeroQuota)
+        );
+        assert_eq!(
+            window(10.0, 11.0).remaining_percent(),
+            Err(QuotaWindowError::UsageExceedsQuota)
+        );
+        assert_eq!(
+            window(f64::INFINITY, 1.0).used_percent(),
+            Err(QuotaWindowError::NonFinite)
+        );
+        assert_eq!(
+            window(10.0, -1.0).used_percent(),
+            Err(QuotaWindowError::Negative)
+        );
+        assert_eq!(
+            QuotaWindow {
+                reset_time: 1_000,
+                ..window(10.0, 1.0)
+            }
+            .period(),
+            Err(QuotaWindowError::InvalidPeriod)
+        );
     }
 
     fn serve(status: &'static str, response_body: &str) -> (String, Receiver<String>) {

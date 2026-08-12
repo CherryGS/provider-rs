@@ -9,6 +9,8 @@ use std::{error, fmt};
 use reqwest::{Client, StatusCode, header};
 use serde::{Deserialize, Serialize};
 
+use super::{EndpointOutcome, ErrorKind, MillisecondPeriod};
+pub use super::{ProviderError, ResponseMetadata};
 use crate::{Credentials, signing};
 
 const ACTION: &str = "GetSeatInfoUsage";
@@ -24,32 +26,20 @@ pub struct Request<'a> {
     pub project_name: Option<&'a str>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Response {
     pub response_metadata: ResponseMetadata,
     pub result: Option<Usage>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct ResponseMetadata {
-    pub request_id: Option<String>,
-    pub action: Option<String>,
-    pub version: Option<String>,
-    pub service: Option<String>,
-    pub region: Option<String>,
-    pub error: Option<ProviderError>,
+impl Response {
+    pub fn into_outcome(self) -> EndpointOutcome<Usage> {
+        EndpointOutcome::from_parts(self.result, self.response_metadata)
+    }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct ProviderError {
-    pub code: String,
-    pub message: String,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Usage {
     #[serde(rename = "SeatID")]
@@ -60,13 +50,113 @@ pub struct Usage {
     #[serde(rename = "UserID")]
     pub user_id: String,
     pub user_name: String,
+    /// Monthly period start as a Unix timestamp in milliseconds.
+    ///
+    /// Source: `GetSeatInfoUsage`, updated 2026-07-31:
+    /// <https://www.volcengine.com/docs/82379/2306579>
     pub monthly_subscribe_milestone: i64,
+    /// Monthly reset as a Unix timestamp in milliseconds.
     pub monthly_reset_milestone: i64,
+    /// Provider-reported used percentage for the five-hour window.
     pub short_term_usage: f64,
+    /// Provider-reported used percentage for the weekly window.
     pub weekly_usage: f64,
+    /// Provider-reported used percentage for the monthly window.
     pub monthly_usage: f64,
+    /// Five-hour reset as a Unix-millisecond timestamp, or `-1` when usage is zero.
     pub short_term_reset_milestone: i64,
+    /// Weekly reset as a Unix timestamp in milliseconds.
     pub weekly_reset_milestone: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowKind {
+    FiveHour,
+    Weekly,
+    Monthly,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct UsageWindow {
+    kind: WindowKind,
+    used_percent: f64,
+    reset_at_ms: i64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UsageWindowError {
+    NonFinite,
+    PercentageOutOfRange,
+    InvalidReset,
+    InvalidMonthlyPeriod,
+}
+
+impl Usage {
+    /// Iterates the percentages and reset milestones documented by
+    /// `GetSeatInfoUsage`: <https://www.volcengine.com/docs/82379/2306579>.
+    pub fn windows(&self) -> impl ExactSizeIterator<Item = UsageWindow> {
+        [
+            UsageWindow {
+                kind: WindowKind::FiveHour,
+                used_percent: self.short_term_usage,
+                reset_at_ms: self.short_term_reset_milestone,
+            },
+            UsageWindow {
+                kind: WindowKind::Weekly,
+                used_percent: self.weekly_usage,
+                reset_at_ms: self.weekly_reset_milestone,
+            },
+            UsageWindow {
+                kind: WindowKind::Monthly,
+                used_percent: self.monthly_usage,
+                reset_at_ms: self.monthly_reset_milestone,
+            },
+        ]
+        .into_iter()
+    }
+
+    pub fn monthly_period(&self) -> Result<MillisecondPeriod, UsageWindowError> {
+        if self.monthly_subscribe_milestone <= 0
+            || self.monthly_reset_milestone <= self.monthly_subscribe_milestone
+        {
+            return Err(UsageWindowError::InvalidMonthlyPeriod);
+        }
+        Ok(MillisecondPeriod {
+            start_ms: self.monthly_subscribe_milestone,
+            reset_ms: self.monthly_reset_milestone,
+        })
+    }
+}
+
+impl UsageWindow {
+    pub const fn kind(self) -> WindowKind {
+        self.kind
+    }
+
+    pub fn used_percent(self) -> Result<f64, UsageWindowError> {
+        if !self.used_percent.is_finite() {
+            return Err(UsageWindowError::NonFinite);
+        }
+        if !(0.0..=100.0).contains(&self.used_percent) {
+            return Err(UsageWindowError::PercentageOutOfRange);
+        }
+        Ok(self.used_percent)
+    }
+
+    pub fn remaining_percent(self) -> Result<f64, UsageWindowError> {
+        Ok(100.0 - self.used_percent()?)
+    }
+
+    pub fn reset_at_ms(self) -> Result<Option<i64>, UsageWindowError> {
+        let used_percent = self.used_percent()?;
+        if self.kind == WindowKind::FiveHour && used_percent == 0.0 && self.reset_at_ms == -1 {
+            return Ok(None);
+        }
+        if self.reset_at_ms <= 0 {
+            return Err(UsageWindowError::InvalidReset);
+        }
+        Ok(Some(self.reset_at_ms))
+    }
 }
 
 #[derive(Debug)]
@@ -88,6 +178,19 @@ pub enum Error {
 }
 
 impl Error {
+    pub const fn kind(&self) -> ErrorKind {
+        match self {
+            Self::InvalidCredentials(_) => ErrorKind::InvalidCredentials,
+            Self::InvalidRequest(_) => ErrorKind::InvalidRequest,
+            Self::Encode(_) => ErrorKind::Encode,
+            Self::Clock(_) => ErrorKind::Clock,
+            Self::Signing => ErrorKind::Signing,
+            Self::Exchange(_) => ErrorKind::Transport,
+            Self::Response { .. } => ErrorKind::HttpResponse,
+            Self::Decode { .. } => ErrorKind::Decode,
+        }
+    }
+
     pub fn status(&self) -> Option<StatusCode> {
         match self {
             Self::Response { status, .. } => Some(*status),
@@ -236,10 +339,18 @@ mod tests {
         .await
         .expect("request succeeds");
 
-        let usage = response.result.expect("usage result");
+        let usage = match response.into_outcome() {
+            EndpointOutcome::Success { data, .. } => data,
+            outcome => panic!("unexpected outcome: {outcome:?}"),
+        };
         assert_eq!(usage.seat_id, "seat-1");
         assert_eq!(usage.account_id, 42);
         assert_eq!(usage.short_term_usage, 12.5);
+        let windows: Vec<_> = usage.windows().collect();
+        assert_eq!(windows[0].kind(), WindowKind::FiveHour);
+        assert_eq!(windows[0].used_percent(), Ok(12.5));
+        assert_eq!(windows[0].remaining_percent(), Ok(87.5));
+        assert_eq!(windows[0].reset_at_ms(), Ok(Some(1_786_341_600_000)));
 
         let request = requests.recv().expect("captured request");
         let (headers, body) = request.split_once("\r\n\r\n").expect("HTTP request");
@@ -277,6 +388,49 @@ mod tests {
         assert_eq!(error.status(), Some(StatusCode::FORBIDDEN));
         assert_eq!(error.raw_body(), Some(r#"{"error":"denied"}"#));
         requests.recv().expect("captured request");
+    }
+
+    #[test]
+    fn validates_documented_percentages_and_milestones() {
+        let usage = Usage {
+            seat_id: "seat-1".into(),
+            account_id: 42,
+            project_name: "default".into(),
+            user_id: "user-1".into(),
+            user_name: "Ada".into(),
+            monthly_subscribe_milestone: 1_000,
+            monthly_reset_milestone: 2_000,
+            short_term_usage: 0.0,
+            weekly_usage: 101.0,
+            monthly_usage: f64::NAN,
+            short_term_reset_milestone: -1,
+            weekly_reset_milestone: 2_000,
+        };
+        let windows: Vec<_> = usage.windows().collect();
+
+        assert_eq!(windows[0].reset_at_ms(), Ok(None));
+        assert_eq!(
+            windows[1].used_percent(),
+            Err(UsageWindowError::PercentageOutOfRange)
+        );
+        assert_eq!(windows[2].used_percent(), Err(UsageWindowError::NonFinite));
+        assert_eq!(
+            usage.monthly_period(),
+            Ok(MillisecondPeriod {
+                start_ms: 1_000,
+                reset_ms: 2_000
+            })
+        );
+
+        let invalid_reset = UsageWindow {
+            kind: WindowKind::Weekly,
+            used_percent: 0.0,
+            reset_at_ms: -1,
+        };
+        assert_eq!(
+            invalid_reset.reset_at_ms(),
+            Err(UsageWindowError::InvalidReset)
+        );
     }
 
     fn serve(status: &'static str, response_body: &str) -> (String, Receiver<String>) {

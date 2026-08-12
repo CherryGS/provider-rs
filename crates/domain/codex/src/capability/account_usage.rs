@@ -46,11 +46,111 @@ pub struct RateLimitWindow {
     pub reset_at: i64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowError {
+    PercentageOutOfRange,
+    InvalidDuration,
+    InvalidReset,
+    TimestampOverflow,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InferredPeriod {
+    pub inferred_start_at_unix_seconds: i64,
+    pub reset_at_unix_seconds: i64,
+}
+
+impl RateLimitWindow {
+    pub fn used_percent(&self) -> Result<u8, WindowError> {
+        u8::try_from(self.used_percent)
+            .ok()
+            .filter(|percent| *percent <= 100)
+            .ok_or(WindowError::PercentageOutOfRange)
+    }
+
+    pub fn remaining_percent(&self) -> Result<u8, WindowError> {
+        Ok(100 - self.used_percent()?)
+    }
+
+    pub const fn reset_at_unix_seconds(&self) -> i64 {
+        self.reset_at
+    }
+
+    pub const fn reset_after_seconds(&self) -> i64 {
+        self.reset_after_seconds
+    }
+
+    /// Infers a full window from Codex's reported duration and reset fields.
+    ///
+    /// When `reset_at` is absent or invalid, the supplied observation time and
+    /// `reset_after_seconds` provide the reset. The inferred start is named as
+    /// such because Codex reports no observed start timestamp. Field meaning is
+    /// sourced from `openai/codex` at the commit linked in this module's docs.
+    pub fn inferred_period_at(
+        &self,
+        observed_at_unix_seconds: i64,
+    ) -> Result<InferredPeriod, WindowError> {
+        if self.limit_window_seconds <= 0 {
+            return Err(WindowError::InvalidDuration);
+        }
+        let reset_at = if self.reset_at > 0 {
+            self.reset_at
+        } else {
+            if observed_at_unix_seconds <= 0 || self.reset_after_seconds < 0 {
+                return Err(WindowError::InvalidReset);
+            }
+            observed_at_unix_seconds
+                .checked_add(self.reset_after_seconds)
+                .ok_or(WindowError::TimestampOverflow)?
+        };
+        let start_at = reset_at
+            .checked_sub(self.limit_window_seconds)
+            .ok_or(WindowError::TimestampOverflow)?;
+        if start_at < 0 {
+            return Err(WindowError::InvalidReset);
+        }
+        Ok(InferredPeriod {
+            inferred_start_at_unix_seconds: start_at,
+            reset_at_unix_seconds: reset_at,
+        })
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Credits {
     pub has_credits: bool,
     pub unlimited: bool,
     pub balance: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CreditState<'a> {
+    Unavailable,
+    Empty,
+    Balance(&'a str),
+    Unlimited,
+}
+
+impl Usage {
+    pub fn credit_state(&self) -> CreditState<'_> {
+        self.credits
+            .as_ref()
+            .map_or(CreditState::Unavailable, Credits::state)
+    }
+}
+
+impl Credits {
+    pub fn state(&self) -> CreditState<'_> {
+        if self.unlimited {
+            CreditState::Unlimited
+        } else if !self.has_credits {
+            CreditState::Empty
+        } else {
+            self.balance
+                .as_deref()
+                .map_or(CreditState::Unavailable, CreditState::Balance)
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -76,6 +176,71 @@ pub struct AdditionalRateLimit {
     pub limit_name: String,
     pub metered_feature: String,
     pub rate_limit: Option<RateLimit>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowKind {
+    Primary,
+    Secondary,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowScope<'a> {
+    Default,
+    Additional {
+        limit_name: &'a str,
+        metered_feature: &'a str,
+    },
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct WindowRef<'a> {
+    pub scope: WindowScope<'a>,
+    pub kind: WindowKind,
+    pub window: &'a RateLimitWindow,
+}
+
+impl Usage {
+    pub fn rate_limit_windows(&self) -> impl Iterator<Item = WindowRef<'_>> {
+        self.rate_limit
+            .iter()
+            .flat_map(|limit| windows(WindowScope::Default, limit))
+            .chain(
+                self.additional_rate_limits
+                    .iter()
+                    .flatten()
+                    .filter_map(|additional| {
+                        additional.rate_limit.as_ref().map(|limit| {
+                            (
+                                WindowScope::Additional {
+                                    limit_name: &additional.limit_name,
+                                    metered_feature: &additional.metered_feature,
+                                },
+                                limit,
+                            )
+                        })
+                    })
+                    .flat_map(|(scope, limit)| windows(scope, limit)),
+            )
+    }
+}
+
+fn windows<'a>(
+    scope: WindowScope<'a>,
+    limit: &'a RateLimit,
+) -> impl Iterator<Item = WindowRef<'a>> {
+    [
+        (WindowKind::Primary, limit.primary_window.as_ref()),
+        (WindowKind::Secondary, limit.secondary_window.as_ref()),
+    ]
+    .into_iter()
+    .filter_map(move |(kind, window)| {
+        window.map(|window| WindowRef {
+            scope,
+            kind,
+            window,
+        })
+    })
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -105,19 +270,58 @@ pub struct RateLimitResetCredits {
 pub enum Error {
     InvalidCredentials(&'static str),
     Request(reqwest::Error),
-    Response { status: StatusCode, body: Box<str> },
-    Decode(reqwest::Error),
+    Response {
+        status: StatusCode,
+        body: Box<str>,
+    },
+    Decode {
+        source: serde_json::Error,
+        body: Box<str>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ErrorKind {
+    InvalidCredentials,
+    Transport,
+    HttpResponse,
+    Decode,
+}
+
+impl Error {
+    pub const fn kind(&self) -> ErrorKind {
+        match self {
+            Self::InvalidCredentials(_) => ErrorKind::InvalidCredentials,
+            Self::Request(_) => ErrorKind::Transport,
+            Self::Response { .. } => ErrorKind::HttpResponse,
+            Self::Decode { .. } => ErrorKind::Decode,
+        }
+    }
+
+    pub const fn status(&self) -> Option<StatusCode> {
+        match self {
+            Self::Response { status, .. } => Some(*status),
+            _ => None,
+        }
+    }
+
+    pub fn raw_body(&self) -> Option<&str> {
+        match self {
+            Self::Response { body, .. } | Self::Decode { body, .. } => Some(body),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidCredentials(field) => write!(formatter, "Codex {field} is empty"),
-            Self::Request(error) => write!(formatter, "Codex usage request failed: {error}"),
+            Self::Request(_) => formatter.write_str("Codex usage request failed"),
             Self::Response { status, .. } => {
                 write!(formatter, "Codex usage request returned {status}")
             }
-            Self::Decode(error) => write!(formatter, "invalid Codex usage response: {error}"),
+            Self::Decode { .. } => formatter.write_str("invalid Codex usage response"),
         }
     }
 }
@@ -125,7 +329,8 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
-            Self::Request(error) | Self::Decode(error) => Some(error),
+            Self::Request(error) => Some(error),
+            Self::Decode { source, .. } => Some(source),
             Self::InvalidCredentials(_) | Self::Response { .. } => None,
         }
     }
@@ -161,12 +366,16 @@ async fn fetch_from(
         let body = response
             .text()
             .await
-            .map_err(Error::Decode)?
+            .map_err(Error::Request)?
             .into_boxed_str();
         return Err(Error::Response { status, body });
     }
 
-    response.json().await.map_err(Error::Decode)
+    let body = response.bytes().await.map_err(Error::Request)?;
+    serde_json::from_slice(&body).map_err(|source| Error::Decode {
+        source,
+        body: String::from_utf8_lossy(&body).into_owned().into_boxed_str(),
+    })
 }
 
 #[cfg(test)]
@@ -296,12 +505,96 @@ mod tests {
         .unwrap_err();
         server.join().unwrap();
 
-        match error {
-            Error::Response { status, body } => {
-                assert_eq!(status, StatusCode::UNAUTHORIZED);
-                assert_eq!(&*body, r#"{"detail":"unauthorized"}"#);
+        assert_eq!(error.kind(), ErrorKind::HttpResponse);
+        assert_eq!(error.status(), Some(StatusCode::UNAUTHORIZED));
+        assert_eq!(error.raw_body(), Some(r#"{"detail":"unauthorized"}"#));
+        assert!(!error.to_string().contains("unauthorized"));
+    }
+
+    #[tokio::test]
+    async fn preserves_invalid_typed_response_without_displaying_it() {
+        let (endpoint, server) = serve_once("200 OK", "not JSON");
+
+        let error = fetch_from(
+            &Client::new(),
+            Credentials {
+                access_token: "secret-token",
+                account_id: "secret-account",
+            },
+            &endpoint,
+        )
+        .await
+        .unwrap_err();
+        server.join().unwrap();
+
+        assert_eq!(error.kind(), ErrorKind::Decode);
+        assert_eq!(error.raw_body(), Some("not JSON"));
+        assert_eq!(error.to_string(), "invalid Codex usage response");
+        assert!(!format!("{error:?}").contains("secret-token"));
+    }
+
+    #[test]
+    fn exposes_checked_window_and_credit_semantics() {
+        let window = RateLimitWindow {
+            used_percent: 42,
+            limit_window_seconds: 18_000,
+            reset_after_seconds: 900,
+            reset_at: 0,
+        };
+        assert_eq!(window.remaining_percent(), Ok(58));
+        assert_eq!(
+            window.inferred_period_at(1_770_000_000),
+            Ok(InferredPeriod {
+                inferred_start_at_unix_seconds: 1_769_982_900,
+                reset_at_unix_seconds: 1_770_000_900,
+            })
+        );
+        assert_eq!(
+            RateLimitWindow {
+                used_percent: 101,
+                ..window
             }
-            error => panic!("unexpected error: {error}"),
+            .remaining_percent(),
+            Err(WindowError::PercentageOutOfRange)
+        );
+
+        for (credits, expected) in [
+            (None, CreditState::Unavailable),
+            (
+                Some(Credits {
+                    has_credits: false,
+                    unlimited: false,
+                    balance: None,
+                }),
+                CreditState::Empty,
+            ),
+            (
+                Some(Credits {
+                    has_credits: true,
+                    unlimited: false,
+                    balance: Some("12.50".into()),
+                }),
+                CreditState::Balance("12.50"),
+            ),
+            (
+                Some(Credits {
+                    has_credits: true,
+                    unlimited: true,
+                    balance: None,
+                }),
+                CreditState::Unlimited,
+            ),
+        ] {
+            let usage = Usage {
+                plan_type: "plus".into(),
+                rate_limit: None,
+                credits,
+                spend_control: None,
+                additional_rate_limits: None,
+                rate_limit_reached_type: None,
+                rate_limit_reset_credits: None,
+            };
+            assert_eq!(usage.credit_state(), expected);
         }
     }
 }
