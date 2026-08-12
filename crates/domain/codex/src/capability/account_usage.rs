@@ -19,7 +19,7 @@ pub struct Credentials<'a> {
     pub account_id: &'a str,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Usage {
     pub plan_type: String,
     pub rate_limit: Option<RateLimit>,
@@ -30,7 +30,7 @@ pub struct Usage {
     pub rate_limit_reset_credits: Option<RateLimitResetCredits>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RateLimit {
     pub allowed: bool,
     pub limit_reached: bool,
@@ -38,7 +38,7 @@ pub struct RateLimit {
     pub secondary_window: Option<RateLimitWindow>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RateLimitWindow {
     pub used_percent: i32,
     pub limit_window_seconds: i64,
@@ -120,7 +120,7 @@ pub fn checked_percent(percent: i32) -> Result<u8, WindowError> {
         .ok_or(WindowError::PercentageOutOfRange)
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Credits {
     pub has_credits: bool,
     pub unlimited: bool,
@@ -157,13 +157,13 @@ impl Credits {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct SpendControl {
     pub reached: bool,
     pub individual_limit: Option<SpendControlLimit>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct SpendControlLimit {
     pub source: Option<String>,
     pub limit: String,
@@ -175,7 +175,17 @@ pub struct SpendControlLimit {
     pub reset_at: i64,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+impl SpendControlLimit {
+    pub fn used_percent(&self) -> Result<u8, WindowError> {
+        checked_percent(self.used_percent)
+    }
+
+    pub fn remaining_percent(&self) -> Result<u8, WindowError> {
+        checked_percent(self.remaining_percent)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct AdditionalRateLimit {
     pub limit_name: String,
     pub metered_feature: String,
@@ -247,13 +257,13 @@ fn windows<'a>(
     })
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RateLimitReachedType {
     #[serde(rename = "type")]
     pub kind: RateLimitReachedKind,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum RateLimitReachedKind {
     RateLimitReached,
@@ -265,7 +275,7 @@ pub enum RateLimitReachedKind {
     Unknown,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct RateLimitResetCredits {
     pub available_count: i64,
 }
@@ -561,6 +571,19 @@ mod tests {
             .remaining_percent(),
             Err(WindowError::PercentageOutOfRange)
         );
+
+        let spend = SpendControlLimit {
+            source: None,
+            limit: "100".into(),
+            used: "25".into(),
+            remaining: "75".into(),
+            used_percent: 25,
+            remaining_percent: 75,
+            reset_after_seconds: 900,
+            reset_at: 0,
+        };
+        assert_eq!(spend.used_percent(), Ok(25));
+        assert_eq!(spend.remaining_percent(), Ok(75));
 
         for (credits, expected) in [
             (None, CreditState::Unavailable),
