@@ -1,8 +1,8 @@
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 use time::{OffsetDateTime, macros::format_description};
 
-use crate::Credentials;
+use crate::{Credentials, ExposeSecret};
 
 pub(crate) const HOST: &str = "ark.cn-beijing.volces.com";
 const REGION: &str = "cn-beijing";
@@ -54,14 +54,17 @@ pub(crate) fn sign(
         sha256_hex(canonical_request.as_bytes())
     );
 
-    let date_key = hmac(credentials.secret_access_key.as_bytes(), date.as_bytes())?;
+    let date_key = hmac(
+        credentials.secret_access_key.expose_secret().as_bytes(),
+        date.as_bytes(),
+    )?;
     let region_key = hmac(&date_key, REGION.as_bytes())?;
     let service_key = hmac(&region_key, SERVICE.as_bytes())?;
     let signing_key = hmac(&service_key, b"request")?;
     let signature = hex(&hmac(&signing_key, string_to_sign.as_bytes())?);
     let authorization = format!(
         "HMAC-SHA256 Credential={}/{credential_scope}, SignedHeaders={SIGNED_HEADERS}, Signature={signature}",
-        credentials.access_key_id
+        credentials.access_key_id.expose_secret()
     );
 
     Some(SignedHeaders {
@@ -97,12 +100,14 @@ mod tests {
 
     #[test]
     fn matches_volcengine_signing_vector() {
+        let access_key_id = crate::SecretString::from("AKIDEXAMPLE");
+        let secret_access_key = crate::SecretString::from("secret");
         let signed = sign(
             "GetSeatInfoUsage",
             br#"{"SeatID":"seat-1","ProjectName":"default"}"#,
             Credentials {
-                access_key_id: "AKIDEXAMPLE",
-                secret_access_key: "secret",
+                access_key_id: &access_key_id,
+                secret_access_key: &secret_access_key,
             },
             "20260810T120000Z",
         )

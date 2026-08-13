@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use provider_codex::{Credentials, account_usage::call};
+use provider_codex::{Credentials, ExposeSecret, SecretString, account_usage::call};
 use serde::Deserialize;
 use std::{env, fs};
 
@@ -13,8 +13,8 @@ struct AuthFile {
 
 #[derive(Deserialize)]
 struct Tokens {
-    access_token: String,
-    account_id: Option<String>,
+    access_token: SecretString,
+    account_id: Option<SecretString>,
 }
 
 #[tokio::test]
@@ -30,11 +30,11 @@ async fn fetches_usage_with_env_auth() {
         .expect("Codex auth JSON must contain ChatGPT tokens");
     let account_id = tokens
         .account_id
-        .as_deref()
-        .filter(|account_id| !account_id.trim().is_empty())
+        .as_ref()
+        .filter(|account_id| !account_id.expose_secret().trim().is_empty())
         .expect("Codex auth tokens must contain an account ID");
     assert!(
-        !tokens.access_token.trim().is_empty(),
+        !tokens.access_token.expose_secret().trim().is_empty(),
         "Codex auth tokens must contain an access token"
     );
 

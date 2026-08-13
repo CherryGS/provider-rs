@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::{error, fmt};
 
 pub use crate::Credentials;
+use crate::ExposeSecret;
 
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/wham/usage";
 const USER_AGENT: &str = concat!("provider-codex/", env!("CARGO_PKG_VERSION"));
@@ -355,17 +356,17 @@ async fn fetch_from(
     credentials: Credentials<'_>,
     endpoint: &str,
 ) -> Result<Usage, Error> {
-    if credentials.access_token.is_empty() {
+    if credentials.access_token.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials("access token"));
     }
-    if credentials.account_id.is_empty() {
+    if credentials.account_id.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials("account ID"));
     }
 
     let response = client
         .get(endpoint)
-        .bearer_auth(credentials.access_token)
-        .header("ChatGPT-Account-Id", credentials.account_id)
+        .bearer_auth(credentials.access_token.expose_secret())
+        .header("ChatGPT-Account-Id", credentials.account_id.expose_secret())
         .header(reqwest::header::USER_AGENT, USER_AGENT)
         .send()
         .await
@@ -472,8 +473,8 @@ mod tests {
         let usage = fetch_from(
             &Client::new(),
             Credentials {
-                access_token: "token",
-                account_id: "account",
+                access_token: &crate::SecretString::from("token"),
+                account_id: &crate::SecretString::from("account"),
             },
             &endpoint,
         )
@@ -506,8 +507,8 @@ mod tests {
         let error = fetch_from(
             &Client::new(),
             Credentials {
-                access_token: "bad-token",
-                account_id: "account",
+                access_token: &crate::SecretString::from("bad-token"),
+                account_id: &crate::SecretString::from("account"),
             },
             &endpoint,
         )
@@ -528,8 +529,8 @@ mod tests {
         let error = fetch_from(
             &Client::new(),
             Credentials {
-                access_token: "secret-token",
-                account_id: "secret-account",
+                access_token: &crate::SecretString::from("secret-token"),
+                account_id: &crate::SecretString::from("secret-account"),
             },
             &endpoint,
         )

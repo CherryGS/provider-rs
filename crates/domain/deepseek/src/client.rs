@@ -1,23 +1,23 @@
 use reqwest::Client as HttpClient;
 
 use crate::{
-    Credentials,
+    Credentials, SecretString,
     capability::{chat_completions, model_list, responses},
 };
 
 /// Optional convenience client over the independently callable DeepSeek capabilities.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Client {
     http: HttpClient,
-    api_key: String,
+    api_key: SecretString,
 }
 
 impl Client {
-    pub fn new(api_key: impl Into<String>) -> Self {
+    pub fn new(api_key: impl Into<SecretString>) -> Self {
         Self::with_http(HttpClient::new(), api_key)
     }
 
-    pub fn with_http(http: HttpClient, api_key: impl Into<String>) -> Self {
+    pub fn with_http(http: HttpClient, api_key: impl Into<SecretString>) -> Self {
         Self {
             http,
             api_key: api_key.into(),

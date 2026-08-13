@@ -10,7 +10,7 @@ use reqwest::{Client, StatusCode, header};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::Credentials;
+use crate::{Credentials, ExposeSecret};
 
 const ENDPOINT: &str = "https://api.anthropic.com/v1/models";
 const API_VERSION: &str = "2023-06-01";
@@ -130,7 +130,7 @@ async fn list_at(
 
     let response = client
         .get(endpoint)
-        .header("x-api-key", credentials.api_key)
+        .header("x-api-key", credentials.api_key.expose_secret())
         .header("anthropic-version", API_VERSION)
         .header(header::ACCEPT, "application/json")
         .header(header::USER_AGENT, USER_AGENT)
@@ -154,7 +154,7 @@ async fn list_at(
 }
 
 fn validate(credentials: Credentials<'_>, request: &Request) -> Result<(), Error> {
-    if credentials.api_key.trim().is_empty() {
+    if credentials.api_key.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials);
     }
     if request
@@ -200,7 +200,7 @@ mod tests {
         let response = list_at(
             &Client::new(),
             Credentials {
-                api_key: "test-key",
+                api_key: &crate::SecretString::from("test-key"),
             },
             &request,
             &format!("{base_url}/v1/models"),
@@ -233,7 +233,7 @@ mod tests {
         let error = list_at(
             &Client::new(),
             Credentials {
-                api_key: "test-key",
+                api_key: &crate::SecretString::from("test-key"),
             },
             &Request {
                 limit: Some(0),
@@ -254,7 +254,9 @@ mod tests {
 
         let error = list_at(
             &Client::new(),
-            Credentials { api_key: "bad-key" },
+            Credentials {
+                api_key: &crate::SecretString::from("bad-key"),
+            },
             &Request::default(),
             &format!("{base_url}/v1/models"),
         )

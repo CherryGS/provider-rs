@@ -10,7 +10,7 @@ use reqwest::{Client, StatusCode, header};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::Credentials;
+use crate::{Credentials, ExposeSecret};
 
 const ENDPOINT: &str = "https://api.openai.com/v1/models";
 const USER_AGENT: &str = concat!("provider-openai/", env!("CARGO_PKG_VERSION"));
@@ -101,14 +101,14 @@ async fn list_at(
 
     let mut builder = client
         .get(endpoint)
-        .bearer_auth(credentials.api_key)
+        .bearer_auth(credentials.api_key.expose_secret())
         .header(header::ACCEPT, "application/json")
         .header(header::USER_AGENT, USER_AGENT);
     if let Some(organization) = credentials.organization {
-        builder = builder.header("OpenAI-Organization", organization);
+        builder = builder.header("OpenAI-Organization", organization.expose_secret());
     }
     if let Some(project) = credentials.project {
-        builder = builder.header("OpenAI-Project", project);
+        builder = builder.header("OpenAI-Project", project.expose_secret());
     }
 
     let response = builder.send().await.map_err(Error::Exchange)?;
@@ -128,18 +128,18 @@ async fn list_at(
 }
 
 fn validate(credentials: Credentials<'_>) -> Result<(), Error> {
-    if credentials.api_key.trim().is_empty() {
+    if credentials.api_key.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials("api_key"));
     }
     if credentials
         .organization
-        .is_some_and(|value| value.trim().is_empty())
+        .is_some_and(|value| value.expose_secret().trim().is_empty())
     {
         return Err(Error::InvalidCredentials("organization"));
     }
     if credentials
         .project
-        .is_some_and(|value| value.trim().is_empty())
+        .is_some_and(|value| value.expose_secret().trim().is_empty())
     {
         return Err(Error::InvalidCredentials("project"));
     }
@@ -161,9 +161,9 @@ mod tests {
         let response = list_at(
             &Client::new(),
             Credentials {
-                api_key: "test-key",
-                organization: Some("org-test"),
-                project: Some("proj-test"),
+                api_key: &crate::SecretString::from("test-key"),
+                organization: Some(&crate::SecretString::from("org-test")),
+                project: Some(&crate::SecretString::from("proj-test")),
             },
             &format!("{base_url}/v1/models"),
         )
@@ -195,7 +195,7 @@ mod tests {
 
         let error = list_at(
             &Client::new(),
-            Credentials::new("bad-key"),
+            Credentials::new(&crate::SecretString::from("bad-key")),
             &format!("{base_url}/v1/models"),
         )
         .await

@@ -10,7 +10,7 @@ use reqwest::{Client, StatusCode, header};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::Credentials;
+use crate::{Credentials, ExposeSecret};
 
 const ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
 const API_VERSION: &str = "2023-06-01";
@@ -223,7 +223,7 @@ async fn create_at(
 
     let response = client
         .post(endpoint)
-        .header("x-api-key", credentials.api_key)
+        .header("x-api-key", credentials.api_key.expose_secret())
         .header("anthropic-version", API_VERSION)
         .header(header::ACCEPT, "application/json")
         .header(header::USER_AGENT, USER_AGENT)
@@ -247,7 +247,7 @@ async fn create_at(
 }
 
 fn validate(credentials: Credentials<'_>, request: &Request) -> Result<(), Error> {
-    if credentials.api_key.trim().is_empty() {
+    if credentials.api_key.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials);
     }
     if request.model.trim().is_empty() {
@@ -285,7 +285,7 @@ mod tests {
         let response = create_at(
             &Client::new(),
             Credentials {
-                api_key: "test-key",
+                api_key: &crate::SecretString::from("test-key"),
             },
             &request,
             &format!("{base_url}/v1/messages"),
@@ -319,7 +319,7 @@ mod tests {
         let error = create_at(
             &Client::new(),
             Credentials {
-                api_key: "test-key",
+                api_key: &crate::SecretString::from("test-key"),
             },
             &Request::new("claude-test", 8, vec![InputMessage::user("hello")]),
             &format!("{base_url}/v1/messages"),

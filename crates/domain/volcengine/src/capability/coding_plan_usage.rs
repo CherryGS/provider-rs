@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{EndpointOutcome, ErrorKind, MillisecondPeriod};
 pub use super::{ProviderError, ResponseMetadata};
-use crate::{Credentials, signing};
+use crate::{Credentials, ExposeSecret, signing};
 
 const ACTION: &str = "GetSeatInfoUsage";
 const ENDPOINT: &str =
@@ -263,10 +263,15 @@ async fn execute(
     endpoint: &str,
     x_date: &str,
 ) -> Result<Response, Error> {
-    if credentials.access_key_id.trim().is_empty() {
+    if credentials.access_key_id.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials("access_key_id"));
     }
-    if credentials.secret_access_key.trim().is_empty() {
+    if credentials
+        .secret_access_key
+        .expose_secret()
+        .trim()
+        .is_empty()
+    {
         return Err(Error::InvalidCredentials("secret_access_key"));
     }
     if request.seat_id.trim().is_empty() {
@@ -320,14 +325,16 @@ mod tests {
 
     use super::*;
 
-    const CREDENTIALS: Credentials<'static> = Credentials {
-        access_key_id: "AKIDEXAMPLE",
-        secret_access_key: "secret",
-    };
     const X_DATE: &str = "20260810T120000Z";
 
     #[tokio::test]
     async fn sends_signed_request_and_decodes_usage() {
+        let access_key_id = crate::SecretString::from("AKIDEXAMPLE");
+        let secret_access_key = crate::SecretString::from("secret");
+        let credentials = Credentials {
+            access_key_id: &access_key_id,
+            secret_access_key: &secret_access_key,
+        };
         let response = r#"{
             "ResponseMetadata":{"RequestId":"request-1","Action":"GetSeatInfoUsage","Version":"2024-01-01","Service":"ark","Region":"cn-beijing"},
             "Result":{"SeatID":"seat-1","AccountID":42,"ProjectName":"default","UserID":"user-1","UserName":"Ada","MonthlySubscribeMilestone":1786320000000,"MonthlyResetMilestone":1788998400000,"ShortTermUsage":12.5,"WeeklyUsage":20.0,"MonthlyUsage":30.0,"ShortTermResetMilestone":1786341600000,"WeeklyResetMilestone":1786924800000}
@@ -336,7 +343,7 @@ mod tests {
 
         let response = execute(
             &Client::new(),
-            CREDENTIALS,
+            credentials,
             Request {
                 seat_id: "seat-1",
                 project_name: Some("default"),
@@ -378,11 +385,17 @@ mod tests {
 
     #[tokio::test]
     async fn preserves_unsuccessful_status_and_body() {
+        let access_key_id = crate::SecretString::from("AKIDEXAMPLE");
+        let secret_access_key = crate::SecretString::from("secret");
+        let credentials = Credentials {
+            access_key_id: &access_key_id,
+            secret_access_key: &secret_access_key,
+        };
         let (endpoint, requests) = serve("403 Forbidden", r#"{"error":"denied"}"#);
 
         let error = execute(
             &Client::new(),
-            CREDENTIALS,
+            credentials,
             Request {
                 seat_id: "seat-1",
                 project_name: None,

@@ -1,4 +1,4 @@
-use provider::codex::{Credentials, account_usage::call};
+use provider::codex::{Credentials, ExposeSecret, SecretString, account_usage::call};
 use serde::Deserialize;
 use std::{env, fs, io, io::Write, process::ExitCode};
 
@@ -11,8 +11,8 @@ struct AuthFile {
 
 #[derive(Deserialize)]
 struct Tokens {
-    access_token: String,
-    account_id: Option<String>,
+    access_token: SecretString,
+    account_id: Option<SecretString>,
 }
 
 #[tokio::main]
@@ -44,7 +44,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             "Codex auth JSON must contain ChatGPT tokens",
         )
     })?;
-    if tokens.access_token.trim().is_empty() {
+    if tokens.access_token.expose_secret().trim().is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "Codex auth tokens must contain an access token",
@@ -53,8 +53,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let account_id = tokens
         .account_id
-        .as_deref()
-        .filter(|account_id| !account_id.trim().is_empty())
+        .as_ref()
+        .filter(|account_id| !account_id.expose_secret().trim().is_empty())
         .ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidData,

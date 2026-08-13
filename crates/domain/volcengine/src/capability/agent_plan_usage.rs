@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{EndpointOutcome, ErrorKind, MillisecondPeriod};
 pub use super::{ProviderError, ResponseMetadata};
-use crate::{Credentials, signing};
+use crate::{Credentials, ExposeSecret, signing};
 
 const ACTION: &str = "GetAFPUsage";
 const ENDPOINT: &str = "https://ark.cn-beijing.volces.com/?Action=GetAFPUsage&Version=2024-01-01";
@@ -235,10 +235,15 @@ async fn execute(
     endpoint: &str,
     x_date: &str,
 ) -> Result<Response, Error> {
-    if credentials.access_key_id.trim().is_empty() {
+    if credentials.access_key_id.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials("access_key_id"));
     }
-    if credentials.secret_access_key.trim().is_empty() {
+    if credentials
+        .secret_access_key
+        .expose_secret()
+        .trim()
+        .is_empty()
+    {
         return Err(Error::InvalidCredentials("secret_access_key"));
     }
 
@@ -283,21 +288,23 @@ mod tests {
 
     use super::*;
 
-    const CREDENTIALS: Credentials<'static> = Credentials {
-        access_key_id: "AKIDEXAMPLE",
-        secret_access_key: "secret",
-    };
     const X_DATE: &str = "20260810T120000Z";
 
     #[tokio::test]
     async fn sends_signed_request_and_decodes_quota_windows() {
+        let access_key_id = crate::SecretString::from("AKIDEXAMPLE");
+        let secret_access_key = crate::SecretString::from("secret");
+        let credentials = Credentials {
+            access_key_id: &access_key_id,
+            secret_access_key: &secret_access_key,
+        };
         let response = r#"{
             "ResponseMetadata":{"RequestId":"request-1","Action":"GetAFPUsage","Version":"2024-01-01","Service":"ark","Region":"cn-beijing"},
             "Result":{"PlanType":"Large","AFPFiveHour":{"Quota":1000,"Used":125.5,"SubscribeTime":1786320000000,"ResetTime":1786341600000},"AFPDaily":{"Quota":5000,"Used":500,"SubscribeTime":1786320000000,"ResetTime":1786406400000},"AFPWeekly":{"Quota":20000,"Used":2000,"SubscribeTime":1786320000000,"ResetTime":1786924800000},"AFPMonthly":{"Quota":80000,"Used":8000,"SubscribeTime":1786320000000,"ResetTime":1788998400000}}
         }"#;
         let (endpoint, requests) = serve("200 OK", response);
 
-        let response = execute(&Client::new(), CREDENTIALS, &endpoint, X_DATE)
+        let response = execute(&Client::new(), credentials, &endpoint, X_DATE)
             .await
             .expect("request succeeds");
 
@@ -328,9 +335,15 @@ mod tests {
 
     #[tokio::test]
     async fn preserves_unsuccessful_status_and_body() {
+        let access_key_id = crate::SecretString::from("AKIDEXAMPLE");
+        let secret_access_key = crate::SecretString::from("secret");
+        let credentials = Credentials {
+            access_key_id: &access_key_id,
+            secret_access_key: &secret_access_key,
+        };
         let (endpoint, requests) = serve("429 Too Many Requests", r#"{"error":"limited"}"#);
 
-        let error = execute(&Client::new(), CREDENTIALS, &endpoint, X_DATE)
+        let error = execute(&Client::new(), credentials, &endpoint, X_DATE)
             .await
             .expect_err("request fails");
 

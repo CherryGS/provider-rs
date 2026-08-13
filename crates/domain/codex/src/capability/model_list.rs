@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use crate::Credentials;
+use crate::ExposeSecret;
 
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/codex/models";
 const USER_AGENT: &str = concat!("provider-codex/", env!("CARGO_PKG_VERSION"));
@@ -129,8 +130,8 @@ async fn list_at(
 
     let response = client
         .get(endpoint)
-        .bearer_auth(credentials.access_token)
-        .header("ChatGPT-Account-Id", credentials.account_id)
+        .bearer_auth(credentials.access_token.expose_secret())
+        .header("ChatGPT-Account-Id", credentials.account_id.expose_secret())
         .header(header::ACCEPT, "application/json")
         .header(header::USER_AGENT, USER_AGENT)
         .query(request)
@@ -153,10 +154,10 @@ async fn list_at(
 }
 
 fn validate(credentials: Credentials<'_>, request: &Request) -> Result<(), Error> {
-    if credentials.access_token.trim().is_empty() {
+    if credentials.access_token.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials("access token"));
     }
-    if credentials.account_id.trim().is_empty() {
+    if credentials.account_id.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials("account ID"));
     }
     if request.client_version.trim().is_empty() {
@@ -217,8 +218,8 @@ mod tests {
         let response = list_at(
             &Client::new(),
             Credentials {
-                access_token: "test-token",
-                account_id: "test-account",
+                access_token: &crate::SecretString::from("test-token"),
+                account_id: &crate::SecretString::from("test-account"),
             },
             &Request::new("0.99.0"),
             &endpoint,
@@ -254,8 +255,8 @@ mod tests {
         let error = list_at(
             &Client::new(),
             Credentials {
-                access_token: "bad-token",
-                account_id: "test-account",
+                access_token: &crate::SecretString::from("bad-token"),
+                account_id: &crate::SecretString::from("test-account"),
             },
             &Request::new("0.99.0"),
             &endpoint,

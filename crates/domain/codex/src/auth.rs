@@ -7,12 +7,12 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::Rng;
 use reqwest::{Client, StatusCode, Url, header};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, Serializer, de::DeserializeOwned};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{error, fmt, time::Duration};
 
-use crate::Credentials;
+use crate::{Credentials, ExposeSecret, SecretString};
 
 /// OpenAI's public Codex OAuth client identifier.
 pub const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -25,12 +25,16 @@ const ORIGINATOR: &str = "codex_cli_rs";
 const USER_AGENT: &str = concat!("provider-codex/", env!("CARGO_PKG_VERSION"));
 
 /// OAuth tokens returned to caller-owned storage.
-#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Tokens {
-    pub id_token: String,
-    pub access_token: String,
-    pub refresh_token: String,
-    pub account_id: String,
+    #[serde(serialize_with = "serialize_secret")]
+    pub id_token: SecretString,
+    #[serde(serialize_with = "serialize_secret")]
+    pub access_token: SecretString,
+    #[serde(serialize_with = "serialize_secret")]
+    pub refresh_token: SecretString,
+    #[serde(serialize_with = "serialize_secret")]
+    pub account_id: SecretString,
 }
 
 impl Tokens {
@@ -40,7 +44,7 @@ impl Tokens {
 
     /// Returns the access-token JWT expiry, if the token contains one.
     pub fn expires_at_unix_seconds(&self) -> Result<Option<i64>, Error> {
-        let claims: StandardClaims = decode_jwt_payload(&self.access_token)?;
+        let claims: StandardClaims = decode_jwt_payload(self.access_token.expose_secret())?;
         Ok(claims.exp)
     }
 
@@ -56,31 +60,27 @@ impl Tokens {
     }
 }
 
-impl fmt::Debug for Tokens {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("Tokens")
-            .field("id_token", &"<redacted>")
-            .field("access_token", &"<redacted>")
-            .field("refresh_token", &"<redacted>")
-            .field("account_id", &"<redacted>")
-            .finish()
-    }
+fn serialize_secret<S>(value: &SecretString, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    value.expose_secret().serialize(serializer)
 }
 
 /// One pending Authorization Code + PKCE exchange.
+#[derive(Debug)]
 pub struct PendingLogin {
-    authorization_url: String,
+    authorization_url: SecretString,
     token_endpoint: String,
     redirect_uri: String,
     client_id: String,
-    code_verifier: String,
-    state: String,
+    code_verifier: SecretString,
+    state: SecretString,
 }
 
 impl PendingLogin {
     pub fn authorization_url(&self) -> &str {
-        &self.authorization_url
+        self.authorization_url.expose_secret()
     }
 
     pub fn redirect_uri(&self) -> &str {
@@ -88,20 +88,7 @@ impl PendingLogin {
     }
 
     pub fn state(&self) -> &str {
-        &self.state
-    }
-}
-
-impl fmt::Debug for PendingLogin {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("PendingLogin")
-            .field("authorization_url", &"<redacted>")
-            .field("redirect_uri", &self.redirect_uri)
-            .field("client_id", &self.client_id)
-            .field("code_verifier", &"<redacted>")
-            .field("state", &"<redacted>")
-            .finish()
+        self.state.expose_secret()
     }
 }
 
@@ -211,12 +198,12 @@ fn begin_login_at(
         .append_pair("originator", ORIGINATOR);
 
     Ok(PendingLogin {
-        authorization_url: authorization_url.into(),
+        authorization_url: String::from(authorization_url).into(),
         token_endpoint: format!("{issuer}/oauth/token"),
         redirect_uri,
         client_id: client_id.to_owned(),
-        code_verifier,
-        state,
+        code_verifier: code_verifier.into(),
+        state: state.into(),
     })
 }
 
@@ -230,7 +217,7 @@ pub async fn exchange_code(
     if code.trim().is_empty() {
         return Err(Error::InvalidInput("authorization code"));
     }
-    if returned_state != pending.state {
+    if returned_state != pending.state.expose_secret() {
         return Err(Error::StateMismatch);
     }
 
@@ -243,7 +230,7 @@ pub async fn exchange_code(
             ("code", code),
             ("redirect_uri", &pending.redirect_uri),
             ("client_id", &pending.client_id),
-            ("code_verifier", &pending.code_verifier),
+            ("code_verifier", pending.code_verifier.expose_secret()),
         ])
         .send()
         .await
@@ -273,7 +260,7 @@ async fn refresh_at(
         .json(&RefreshRequest {
             client_id,
             grant_type: "refresh_token",
-            refresh_token: &tokens.refresh_token,
+            refresh_token: tokens.refresh_token.expose_secret(),
         })
         .send()
         .await
@@ -286,22 +273,22 @@ async fn refresh_at(
             return Err(Error::InvalidToken("ID token"));
         }
         let account_id = account_id(&id_token)?;
-        if account_id != refreshed.account_id {
+        if account_id != refreshed.account_id.expose_secret() {
             return Err(Error::AccountMismatch);
         }
-        refreshed.id_token = id_token;
+        refreshed.id_token = id_token.into();
     }
     if let Some(access_token) = response.access_token {
         if access_token.trim().is_empty() {
             return Err(Error::InvalidToken("access token"));
         }
-        refreshed.access_token = access_token;
+        refreshed.access_token = access_token.into();
     }
     if let Some(refresh_token) = response.refresh_token {
         if refresh_token.trim().is_empty() {
             return Err(Error::InvalidToken("refresh token"));
         }
-        refreshed.refresh_token = refresh_token;
+        refreshed.refresh_token = refresh_token.into();
     }
     validate_tokens(&refreshed)?;
     Ok(refreshed)
@@ -323,7 +310,7 @@ async fn revoke_at(
         .post(endpoint)
         .header(header::USER_AGENT, USER_AGENT)
         .json(&RevokeRequest {
-            token: &tokens.refresh_token,
+            token: tokens.refresh_token.expose_secret(),
             token_type_hint: "refresh_token",
             client_id,
         })
@@ -364,7 +351,7 @@ fn validate_tokens(tokens: &Tokens) -> Result<(), Error> {
         (&tokens.refresh_token, "refresh token"),
         (&tokens.account_id, "account ID"),
     ] {
-        if value.trim().is_empty() {
+        if value.expose_secret().trim().is_empty() {
             return Err(Error::InvalidToken(field));
         }
     }
@@ -374,10 +361,10 @@ fn validate_tokens(tokens: &Tokens) -> Result<(), Error> {
 impl Tokens {
     fn from_exchange(response: ExchangeResponse) -> Result<Self, Error> {
         let tokens = Self {
-            account_id: account_id(&response.id_token)?,
-            id_token: response.id_token,
-            access_token: response.access_token,
-            refresh_token: response.refresh_token,
+            account_id: account_id(&response.id_token)?.into(),
+            id_token: response.id_token.into(),
+            access_token: response.access_token.into(),
+            refresh_token: response.refresh_token.into(),
         };
         validate_tokens(&tokens)?;
         Ok(tokens)
@@ -505,7 +492,7 @@ mod tests {
             Some(pending.state())
         );
         let debug = format!("{pending:?}");
-        assert!(!debug.contains(&pending.code_verifier));
+        assert!(!debug.contains(pending.code_verifier.expose_secret()));
         assert!(!debug.contains(pending.state()));
     }
 
@@ -538,7 +525,7 @@ mod tests {
             .await
             .expect("exchange succeeds");
 
-        assert_eq!(tokens.account_id, "account-1");
+        assert_eq!(tokens.account_id.expose_secret(), "account-1");
         assert_eq!(
             tokens.expires_at_unix_seconds().expect("valid JWT"),
             Some(2000)
@@ -556,10 +543,10 @@ mod tests {
     async fn refreshes_rotated_fields_and_preserves_omitted_fields() {
         let id_token = jwt(r#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-1"}}"#);
         let tokens = Tokens {
-            id_token,
-            access_token: jwt(r#"{"exp":1000}"#),
-            refresh_token: "refresh-1".to_owned(),
-            account_id: "account-1".to_owned(),
+            id_token: id_token.into(),
+            access_token: jwt(r#"{"exp":1000}"#).into(),
+            refresh_token: "refresh-1".into(),
+            account_id: "account-1".into(),
         };
         let body = serde_json::json!({
             "access_token": jwt(r#"{"exp":3000}"#),
@@ -577,8 +564,11 @@ mod tests {
         .await
         .expect("refresh succeeds");
 
-        assert_eq!(refreshed.id_token, tokens.id_token);
-        assert_eq!(refreshed.refresh_token, "refresh-2");
+        assert_eq!(
+            refreshed.id_token.expose_secret(),
+            tokens.id_token.expose_secret()
+        );
+        assert_eq!(refreshed.refresh_token.expose_secret(), "refresh-2");
         assert!(
             !refreshed
                 .needs_refresh_at(2000, Duration::from_secs(60))
@@ -592,10 +582,11 @@ mod tests {
     #[tokio::test]
     async fn rejects_account_change_during_refresh() {
         let tokens = Tokens {
-            id_token: jwt(r#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-1"}}"#),
-            access_token: jwt(r#"{"exp":1000}"#),
-            refresh_token: "refresh-1".to_owned(),
-            account_id: "account-1".to_owned(),
+            id_token: jwt(r#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-1"}}"#)
+                .into(),
+            access_token: jwt(r#"{"exp":1000}"#).into(),
+            refresh_token: "refresh-1".into(),
+            account_id: "account-1".into(),
         };
         let body = serde_json::json!({
             "id_token": jwt(r#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-2"}}"#),
@@ -619,10 +610,11 @@ mod tests {
     #[tokio::test]
     async fn revokes_refresh_token_without_touching_storage() {
         let tokens = Tokens {
-            id_token: jwt(r#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-1"}}"#),
-            access_token: jwt(r#"{"exp":1000}"#),
-            refresh_token: "refresh-1".to_owned(),
-            account_id: "account-1".to_owned(),
+            id_token: jwt(r#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-1"}}"#)
+                .into(),
+            access_token: jwt(r#"{"exp":1000}"#).into(),
+            refresh_token: "refresh-1".into(),
+            account_id: "account-1".into(),
         };
         let (base_url, requests) = serve(&[("200 OK", "{}".to_owned())]);
 
@@ -638,6 +630,33 @@ mod tests {
         let request = requests.recv().expect("captured request");
         assert!(request.contains(r#""token":"refresh-1""#));
         assert!(request.contains(r#""token_type_hint":"refresh_token""#));
+    }
+
+    #[test]
+    fn serializes_tokens_without_exposing_debug_output() {
+        let tokens = Tokens {
+            id_token: "id-secret".into(),
+            access_token: "access-secret".into(),
+            refresh_token: "refresh-secret".into(),
+            account_id: "account-secret".into(),
+        };
+
+        let encoded = serde_json::to_string(&tokens).expect("tokens serialize");
+        let decoded: Tokens = serde_json::from_str(&encoded).expect("tokens deserialize");
+        assert_eq!(decoded.id_token.expose_secret(), "id-secret");
+        assert_eq!(decoded.access_token.expose_secret(), "access-secret");
+        assert_eq!(decoded.refresh_token.expose_secret(), "refresh-secret");
+        assert_eq!(decoded.account_id.expose_secret(), "account-secret");
+
+        let debug = format!("{tokens:?} {:?}", tokens.credentials());
+        for secret in [
+            "id-secret",
+            "access-secret",
+            "refresh-secret",
+            "account-secret",
+        ] {
+            assert!(!debug.contains(secret));
+        }
     }
 
     #[test]

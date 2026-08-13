@@ -9,7 +9,7 @@ use reqwest::{Client, StatusCode, header};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::Credentials;
+use crate::{Credentials, ExposeSecret};
 
 const ENDPOINT: &str = "https://api.deepseek.com/chat/completions";
 const USER_AGENT: &str = concat!("provider-deepseek/", env!("CARGO_PKG_VERSION"));
@@ -276,7 +276,7 @@ async fn create_at(
 
     let response = client
         .post(endpoint)
-        .bearer_auth(credentials.api_key)
+        .bearer_auth(credentials.api_key.expose_secret())
         .header(header::ACCEPT, "application/json")
         .header(header::USER_AGENT, USER_AGENT)
         .json(request)
@@ -299,7 +299,7 @@ async fn create_at(
 }
 
 fn validate(credentials: Credentials<'_>, request: &Request) -> Result<(), Error> {
-    if credentials.api_key.trim().is_empty() {
+    if credentials.api_key.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials("api_key"));
     }
     if request.model.trim().is_empty() {
@@ -364,7 +364,7 @@ mod tests {
 
         let response = create_at(
             &Client::new(),
-            Credentials::new("test-key"),
+            Credentials::new(&crate::SecretString::from("test-key")),
             &request,
             &format!("{base_url}/chat/completions"),
         )
@@ -402,7 +402,7 @@ mod tests {
 
         let error = create_at(
             &Client::new(),
-            Credentials::new("test-key"),
+            Credentials::new(&crate::SecretString::from("test-key")),
             &Request::new("deepseek-v4-flash", vec![Message::user("hello")]),
             &format!("{base_url}/chat/completions"),
         )
@@ -419,9 +419,13 @@ mod tests {
         let mut request = Request::new("deepseek-v4-flash", vec![Message::user("hello")]);
         request.user_id = Some("private user".to_owned());
 
-        let error = call(&Client::new(), Credentials::new("test-key"), &request)
-            .await
-            .expect_err("request is invalid");
+        let error = call(
+            &Client::new(),
+            Credentials::new(&crate::SecretString::from("test-key")),
+            &request,
+        )
+        .await
+        .expect_err("request is invalid");
 
         assert!(matches!(error, Error::InvalidRequest("user_id")));
     }

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    Credentials,
+    Credentials, ExposeSecret,
     capability::messages::{Content, InputMessage},
 };
 
@@ -130,7 +130,7 @@ async fn count_at(
     request: &Request,
     endpoint: &str,
 ) -> Result<Response, Error> {
-    if credentials.api_key.trim().is_empty() {
+    if credentials.api_key.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials);
     }
     if request.model.trim().is_empty() {
@@ -142,7 +142,7 @@ async fn count_at(
 
     let response = client
         .post(endpoint)
-        .header("x-api-key", credentials.api_key)
+        .header("x-api-key", credentials.api_key.expose_secret())
         .header("anthropic-version", API_VERSION)
         .header(header::ACCEPT, "application/json")
         .header(header::USER_AGENT, USER_AGENT)
@@ -187,7 +187,7 @@ mod tests {
         let response = count_at(
             &Client::new(),
             Credentials {
-                api_key: "test-key",
+                api_key: &crate::SecretString::from("test-key"),
             },
             &request,
             &format!("{base_url}/v1/messages/count_tokens"),
@@ -216,7 +216,7 @@ mod tests {
         let error = count_at(
             &Client::new(),
             Credentials {
-                api_key: "test-key",
+                api_key: &crate::SecretString::from("test-key"),
             },
             &Request::new("claude-test", vec![InputMessage::user("hello")]),
             &format!("{base_url}/v1/messages/count_tokens"),

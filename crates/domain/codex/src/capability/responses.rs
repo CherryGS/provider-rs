@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 use std::{collections::BTreeMap, error, fmt, mem, str};
 
 pub use crate::Credentials;
+use crate::ExposeSecret;
 
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/codex/responses";
 const USER_AGENT: &str = concat!("provider-codex/", env!("CARGO_PKG_VERSION"));
@@ -237,10 +238,10 @@ async fn stream_from(
     request: &Request,
     endpoint: &str,
 ) -> Result<EventStream, Error> {
-    if credentials.access_token.trim().is_empty() {
+    if credentials.access_token.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials("access token"));
     }
-    if credentials.account_id.trim().is_empty() {
+    if credentials.account_id.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials("account ID"));
     }
     if request.model.trim().is_empty() {
@@ -249,8 +250,8 @@ async fn stream_from(
 
     let response = client
         .post(endpoint)
-        .bearer_auth(credentials.access_token)
-        .header("ChatGPT-Account-Id", credentials.account_id)
+        .bearer_auth(credentials.access_token.expose_secret())
+        .header("ChatGPT-Account-Id", credentials.account_id.expose_secret())
         .header(reqwest::header::USER_AGENT, USER_AGENT)
         .header(reqwest::header::ACCEPT, "text/event-stream")
         .json(&WireRequest::from(request))
@@ -433,8 +434,8 @@ mod tests {
         let mut events = stream_from(
             &Client::new(),
             Credentials {
-                access_token: "token",
-                account_id: "account",
+                access_token: &crate::SecretString::from("token"),
+                account_id: &crate::SecretString::from("account"),
             },
             &request,
             &endpoint,
@@ -491,8 +492,8 @@ mod tests {
         let error = stream_from(
             &Client::new(),
             Credentials {
-                access_token: "secret-token",
-                account_id: "account",
+                access_token: &crate::SecretString::from("secret-token"),
+                account_id: &crate::SecretString::from("account"),
             },
             &request,
             &endpoint,

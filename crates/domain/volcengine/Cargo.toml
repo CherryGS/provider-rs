@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 hmac.workspace = true
 reqwest.workspace = true
+secrecy.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

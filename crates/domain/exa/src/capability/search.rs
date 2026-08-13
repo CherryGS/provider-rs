@@ -8,7 +8,7 @@ use reqwest::{Client, StatusCode, header};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::Credentials;
+use crate::{Credentials, ExposeSecret};
 
 const ENDPOINT: &str = "https://api.exa.ai/search";
 const USER_AGENT: &str = concat!("provider-exa/", env!("CARGO_PKG_VERSION"));
@@ -191,7 +191,7 @@ async fn search_at(
 
     let response = client
         .post(endpoint)
-        .header("x-api-key", credentials.api_key)
+        .header("x-api-key", credentials.api_key.expose_secret())
         .header(header::ACCEPT, "application/json")
         .header(header::USER_AGENT, USER_AGENT)
         .json(request)
@@ -214,7 +214,7 @@ async fn search_at(
 }
 
 fn validate(credentials: Credentials<'_>, request: &Request) -> Result<(), Error> {
-    if credentials.api_key.trim().is_empty() {
+    if credentials.api_key.expose_secret().trim().is_empty() {
         return Err(Error::InvalidCredentials);
     }
     if request.query.trim().is_empty() {
@@ -258,12 +258,10 @@ mod tests {
     use super::*;
     use crate::test_support::serve;
 
-    const CREDENTIALS: Credentials<'_> = Credentials {
-        api_key: "test-key",
-    };
-
     #[tokio::test]
     async fn sends_search_shape_and_decodes_response() {
+        let api_key = crate::SecretString::from("test-key");
+        let credentials = Credentials { api_key: &api_key };
         let response_body = r#"{"requestId":"req_1","results":[{"id":"result_1","title":"Exa","url":"https://exa.ai","text":"Search API","newField":true}],"costDollars":{"total":0.005},"future":true}"#;
         let (base_url, requests) = serve("200 OK", response_body);
         let mut request = Request::new("Rust provider libraries");
@@ -278,7 +276,7 @@ mod tests {
 
         let response = search_at(
             &Client::new(),
-            CREDENTIALS,
+            credentials,
             &request,
             &format!("{base_url}/search"),
         )
@@ -307,28 +305,32 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_invalid_request_before_exchange() {
+        let api_key = crate::SecretString::from("test-key");
+        let credentials = Credentials { api_key: &api_key };
         let mut request = Request::new(" ");
         assert!(matches!(
-            search_at(&Client::new(), CREDENTIALS, &request, "invalid").await,
+            search_at(&Client::new(), credentials, &request, "invalid").await,
             Err(Error::InvalidRequest("query"))
         ));
 
         request.query = "valid".to_owned();
         request.num_results = Some(0);
         assert!(matches!(
-            search_at(&Client::new(), CREDENTIALS, &request, "invalid").await,
+            search_at(&Client::new(), credentials, &request, "invalid").await,
             Err(Error::InvalidRequest("num_results"))
         ));
     }
 
     #[tokio::test]
     async fn preserves_unsuccessful_status_and_body() {
+        let api_key = crate::SecretString::from("test-key");
+        let credentials = Credentials { api_key: &api_key };
         let body = r#"{"error":"rate limited"}"#;
         let (base_url, requests) = serve("429 Too Many Requests", body);
 
         let error = search_at(
             &Client::new(),
-            CREDENTIALS,
+            credentials,
             &Request::new("Rust"),
             &format!("{base_url}/search"),
         )
