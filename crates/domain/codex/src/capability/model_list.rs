@@ -13,14 +13,10 @@ use reqwest::{Client, StatusCode, header};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use crate::Credentials;
+
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/codex/models";
 const USER_AGENT: &str = concat!("provider-codex/", env!("CARGO_PKG_VERSION"));
-
-#[derive(Clone, Copy)]
-pub struct Credentials<'a> {
-    pub access_token: &'a str,
-    pub account_id: &'a str,
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Request {

@@ -10,14 +10,10 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::{error, fmt};
 
+pub use crate::Credentials;
+
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/wham/usage";
 const USER_AGENT: &str = concat!("provider-codex/", env!("CARGO_PKG_VERSION"));
-
-#[derive(Clone, Copy)]
-pub struct Credentials<'a> {
-    pub access_token: &'a str,
-    pub account_id: &'a str,
-}
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Usage {

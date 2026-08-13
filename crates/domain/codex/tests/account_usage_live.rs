@@ -1,6 +1,6 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use provider_codex::account_usage::{Credentials, call};
+use provider_codex::{Credentials, account_usage::call};
 use serde::Deserialize;
 use std::{env, fs};
 

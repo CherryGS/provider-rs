@@ -1,4 +1,4 @@
-use provider::codex::account_usage::{Credentials, call};
+use provider::codex::{Credentials, account_usage::call};
 use serde::Deserialize;
 use std::{env, fs, io, io::Write, process::ExitCode};
 

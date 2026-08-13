@@ -1,6 +1,9 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use provider_codex::responses::{Credentials, Reasoning, Request, call};
+use provider_codex::{
+    Credentials,
+    responses::{Reasoning, Request, call},
+};
 use serde::Deserialize;
 use serde_json::json;
 use std::{env, fs};

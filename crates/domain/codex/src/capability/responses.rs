@@ -12,14 +12,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::{collections::BTreeMap, error, fmt, mem, str};
 
+pub use crate::Credentials;
+
 const ENDPOINT: &str = "https://chatgpt.com/backend-api/codex/responses";
 const USER_AGENT: &str = concat!("provider-codex/", env!("CARGO_PKG_VERSION"));
-
-#[derive(Clone, Copy)]
-pub struct Credentials<'a> {
-    pub access_token: &'a str,
-    pub account_id: &'a str,
-}
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Reasoning {
