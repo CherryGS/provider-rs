@@ -342,7 +342,7 @@ fn validate(credentials: Credentials<'_>, request: &Request) -> Result<(), Error
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::serve;
+    use provider_test_support::serve_json as serve;
 
     #[tokio::test]
     async fn sends_text_documents_and_decodes_legacy_usage() {

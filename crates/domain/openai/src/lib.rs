@@ -4,9 +4,6 @@ mod client;
 pub use client::Client;
 pub use secrecy::{ExposeSecret, SecretString};
 
-#[cfg(test)]
-mod test_support;
-
 /// Caller-owned OpenAI API invocation credentials and scope.
 #[derive(Clone, Copy, Debug)]
 pub struct Credentials<'a> {

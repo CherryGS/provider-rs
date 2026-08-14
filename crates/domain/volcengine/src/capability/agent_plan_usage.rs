@@ -278,13 +278,7 @@ async fn execute(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        io::{Read, Write},
-        net::{TcpListener, TcpStream},
-        sync::mpsc::{self, Receiver},
-        thread,
-        time::Duration,
-    };
+    use provider_test_support::serve_json as serve;
 
     use super::*;
 
@@ -302,7 +296,8 @@ mod tests {
             "ResponseMetadata":{"RequestId":"request-1","Action":"GetAFPUsage","Version":"2024-01-01","Service":"ark","Region":"cn-beijing"},
             "Result":{"PlanType":"Large","AFPFiveHour":{"Quota":1000,"Used":125.5,"SubscribeTime":1786320000000,"ResetTime":1786341600000},"AFPDaily":{"Quota":5000,"Used":500,"SubscribeTime":1786320000000,"ResetTime":1786406400000},"AFPWeekly":{"Quota":20000,"Used":2000,"SubscribeTime":1786320000000,"ResetTime":1786924800000},"AFPMonthly":{"Quota":80000,"Used":8000,"SubscribeTime":1786320000000,"ResetTime":1788998400000}}
         }"#;
-        let (endpoint, requests) = serve("200 OK", response);
+        let (base_url, requests) = serve("200 OK", response);
+        let endpoint = format!("{base_url}/?Action=GetAFPUsage&Version=2024-01-01");
 
         let response = execute(&Client::new(), credentials, &endpoint, X_DATE)
             .await
@@ -341,7 +336,8 @@ mod tests {
             access_key_id: &access_key_id,
             secret_access_key: &secret_access_key,
         };
-        let (endpoint, requests) = serve("429 Too Many Requests", r#"{"error":"limited"}"#);
+        let (base_url, requests) = serve("429 Too Many Requests", r#"{"error":"limited"}"#);
+        let endpoint = format!("{base_url}/?Action=GetAFPUsage&Version=2024-01-01");
 
         let error = execute(&Client::new(), credentials, &endpoint, X_DATE)
             .await
@@ -385,63 +381,5 @@ mod tests {
             .period(),
             Err(QuotaWindowError::InvalidPeriod)
         );
-    }
-
-    fn serve(status: &'static str, response_body: &str) -> (String, Receiver<String>) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
-        let address = listener.local_addr().expect("test server address");
-        let response_body = response_body.to_owned();
-        let (sender, receiver) = mpsc::channel();
-
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept request");
-            stream
-                .set_read_timeout(Some(Duration::from_secs(5)))
-                .expect("set read timeout");
-            let request = read_request(&mut stream);
-            sender
-                .send(String::from_utf8(request).expect("UTF-8 request"))
-                .expect("send captured request");
-            write!(
-                stream,
-                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{response_body}",
-                response_body.len()
-            )
-            .expect("write response");
-        });
-
-        (
-            format!("http://{address}/?Action=GetAFPUsage&Version=2024-01-01"),
-            receiver,
-        )
-    }
-
-    fn read_request(stream: &mut TcpStream) -> Vec<u8> {
-        let mut request = Vec::new();
-        let mut buffer = [0; 1024];
-
-        loop {
-            let read = stream.read(&mut buffer).expect("read request");
-            if read == 0 {
-                break;
-            }
-            request.extend_from_slice(&buffer[..read]);
-
-            let Some(header_end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") else {
-                continue;
-            };
-            let headers = std::str::from_utf8(&request[..header_end]).expect("UTF-8 headers");
-            let content_length = headers
-                .lines()
-                .filter_map(|line| line.split_once(':'))
-                .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-                .and_then(|(_, value)| value.trim().parse::<usize>().ok())
-                .unwrap_or(0);
-            if request.len() >= header_end + 4 + content_length {
-                break;
-            }
-        }
-
-        request
     }
 }

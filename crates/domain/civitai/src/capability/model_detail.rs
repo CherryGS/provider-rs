@@ -97,7 +97,7 @@ mod tests {
     use reqwest::{Client, StatusCode};
 
     use super::fetch_at;
-    use crate::test_support::serve;
+    use provider_test_support::serve;
 
     #[tokio::test]
     async fn requests_model_and_decodes_preview_discovery() {

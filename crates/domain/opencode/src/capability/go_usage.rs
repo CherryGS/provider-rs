@@ -164,13 +164,7 @@ async fn get_at(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        io::{Read, Write},
-        net::{TcpListener, TcpStream},
-        sync::mpsc::{self, Receiver},
-        thread,
-        time::Duration,
-    };
+    use provider_test_support::serve_json as serve;
 
     use super::*;
 
@@ -228,47 +222,5 @@ mod tests {
                 message: "OpenCode Go subscription required.".into(),
             })
         );
-    }
-
-    fn serve(status: &'static str, response_body: &str) -> (String, Receiver<String>) {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
-        let address = listener.local_addr().expect("test server address");
-        let response_body = response_body.to_owned();
-        let (sender, receiver) = mpsc::channel();
-
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept request");
-            stream
-                .set_read_timeout(Some(Duration::from_secs(5)))
-                .expect("set read timeout");
-            let request = read_request(&mut stream);
-            sender
-                .send(String::from_utf8(request).expect("UTF-8 request"))
-                .expect("send captured request");
-            write!(
-                stream,
-                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{response_body}",
-                response_body.len()
-            )
-            .expect("write response");
-        });
-
-        (format!("http://{address}"), receiver)
-    }
-
-    fn read_request(stream: &mut TcpStream) -> Vec<u8> {
-        let mut request = Vec::new();
-        let mut buffer = [0; 1024];
-        loop {
-            let read = stream.read(&mut buffer).expect("read request");
-            if read == 0 {
-                break;
-            }
-            request.extend_from_slice(&buffer[..read]);
-            if request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
-                break;
-            }
-        }
-        request
     }
 }

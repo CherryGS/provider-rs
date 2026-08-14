@@ -13,4 +13,5 @@ sha2.workspace = true
 time.workspace = true
 
 [dev-dependencies]
+provider-test-support.workspace = true
 tokio.workspace = true

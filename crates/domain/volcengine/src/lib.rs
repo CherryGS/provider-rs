@@ -2,9 +2,6 @@ pub mod capability;
 mod signing;
 pub use secrecy::{ExposeSecret, SecretString};
 
-#[cfg(test)]
-mod test_support;
-
 /// Caller-owned credentials for Volcengine OpenAPI request signing.
 #[derive(Clone, Copy, Debug)]
 pub struct Credentials<'a> {

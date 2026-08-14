@@ -220,7 +220,7 @@ fn validate(credentials: ArkCredentials<'_>, request: &Request) -> Result<(), Er
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::serve;
+    use provider_test_support::serve_json as serve;
 
     #[tokio::test]
     async fn sends_texts_and_decodes_vectors() {

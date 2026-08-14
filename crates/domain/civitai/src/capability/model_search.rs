@@ -191,7 +191,7 @@ mod tests {
     use reqwest::{Client, StatusCode};
 
     use super::{Error, Request, search_at};
-    use crate::test_support::serve;
+    use provider_test_support::serve;
 
     #[tokio::test]
     async fn sends_query_and_decodes_models() {

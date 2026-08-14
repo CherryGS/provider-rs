@@ -1,9 +1,6 @@
 pub mod capability;
 pub use secrecy::{ExposeSecret, SecretString};
 
-#[cfg(test)]
-mod test_support;
-
 /// Caller-owned SiliconFlow API credentials.
 #[derive(Clone, Copy, Debug)]
 pub struct Credentials<'a> {

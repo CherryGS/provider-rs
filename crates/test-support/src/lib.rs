@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used, clippy::unwrap_used)]
+
 use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -6,10 +8,21 @@ use std::{
     time::Duration,
 };
 
-pub(crate) fn serve(status: &'static str, response_body: &str) -> (String, Receiver<String>) {
+pub fn serve_json(
+    status: &'static str,
+    response_body: impl AsRef<[u8]>,
+) -> (String, Receiver<String>) {
+    serve(status, "application/json", response_body)
+}
+
+pub fn serve(
+    status: &'static str,
+    content_type: &'static str,
+    response_body: impl AsRef<[u8]>,
+) -> (String, Receiver<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
     let address = listener.local_addr().expect("test server address");
-    let response_body = response_body.to_owned();
+    let response_body = response_body.as_ref().to_owned();
     let (sender, receiver) = mpsc::channel();
 
     thread::spawn(move || {
@@ -23,10 +36,13 @@ pub(crate) fn serve(status: &'static str, response_body: &str) -> (String, Recei
             .expect("send captured request");
         write!(
             stream,
-            "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{response_body}",
+            "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
             response_body.len()
         )
-        .expect("write response");
+        .expect("write response headers");
+        stream
+            .write_all(&response_body)
+            .expect("write response body");
     });
 
     (format!("http://{address}"), receiver)

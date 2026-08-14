@@ -817,6 +817,7 @@ dependencies = [
 name = "provider-anthropic"
 version = "0.1.0"
 dependencies = [
+ "provider-test-support",
  "reqwest",
  "secrecy",
  "serde",
@@ -829,6 +830,7 @@ name = "provider-civitai"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "provider-test-support",
  "reqwest",
  "serde",
  "serde_json",
@@ -864,6 +866,7 @@ dependencies = [
 name = "provider-deepseek"
 version = "0.1.0"
 dependencies = [
+ "provider-test-support",
  "reqwest",
  "secrecy",
  "serde",
@@ -875,6 +878,7 @@ dependencies = [
 name = "provider-exa"
 version = "0.1.0"
 dependencies = [
+ "provider-test-support",
  "reqwest",
  "secrecy",
  "serde",
@@ -886,6 +890,7 @@ dependencies = [
 name = "provider-openai"
 version = "0.1.0"
 dependencies = [
+ "provider-test-support",
  "reqwest",
  "secrecy",
  "serde",
@@ -897,6 +902,7 @@ dependencies = [
 name = "provider-opencode"
 version = "0.1.0"
 dependencies = [
+ "provider-test-support",
  "reqwest",
  "secrecy",
  "serde",
@@ -908,6 +914,7 @@ dependencies = [
 name = "provider-siliconflow"
 version = "0.1.0"
 dependencies = [
+ "provider-test-support",
  "reqwest",
  "secrecy",
  "serde",
@@ -916,10 +923,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "provider-test-support"
+version = "0.0.0"
+
+[[package]]
 name = "provider-volcengine"
 version = "0.1.0"
 dependencies = [
  "hmac",
+ "provider-test-support",
  "reqwest",
  "secrecy",
  "serde",

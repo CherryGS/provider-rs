@@ -133,7 +133,9 @@ mod tests {
     use reqwest::{Client, StatusCode, Url};
 
     use super::{Error, call, fetch_from};
-    use crate::{model::PreviewImage, test_support::serve};
+    use provider_test_support::serve;
+
+    use crate::model::PreviewImage;
 
     fn preview(url: impl Into<String>) -> PreviewImage {
         PreviewImage {
@@ -151,7 +153,7 @@ mod tests {
     #[tokio::test]
     async fn requests_discovered_image_and_returns_binary_body() {
         let body = [0x52, 0x49, 0x46, 0x46];
-        let (base_url, requests) = serve("200 OK", "image/webp", &body);
+        let (base_url, requests) = serve("200 OK", "image/webp", body);
 
         let response = fetch_from(
             &Client::new(),

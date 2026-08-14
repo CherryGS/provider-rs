@@ -312,7 +312,7 @@ fn validate_video(video: &VideoUrl) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::serve;
+    use provider_test_support::serve_json as serve;
 
     #[tokio::test]
     async fn sends_mixed_input_and_decodes_multimodal_usage() {

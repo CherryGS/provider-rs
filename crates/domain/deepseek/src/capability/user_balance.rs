@@ -126,7 +126,7 @@ async fn get_at(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::serve;
+    use provider_test_support::serve_json as serve;
 
     #[tokio::test]
     async fn gets_user_balance() {
