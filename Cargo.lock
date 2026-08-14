@@ -808,6 +808,7 @@ dependencies = [
  "provider-deepseek",
  "provider-exa",
  "provider-openai",
+ "provider-opencode",
  "provider-siliconflow",
  "provider-volcengine",
 ]
@@ -883,6 +884,17 @@ dependencies = [
 
 [[package]]
 name = "provider-openai"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "provider-opencode"
 version = "0.1.0"
 dependencies = [
  "reqwest",

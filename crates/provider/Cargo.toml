@@ -11,6 +11,7 @@ codex = ["dep:provider-codex"]
 deepseek = ["dep:provider-deepseek"]
 exa = ["dep:provider-exa"]
 openai = ["dep:provider-openai"]
+opencode = ["dep:provider-opencode"]
 siliconflow = ["dep:provider-siliconflow"]
 volcengine = ["dep:provider-volcengine"]
 
@@ -21,5 +22,6 @@ provider-codex = { path = "../domain/codex", optional = true }
 provider-deepseek = { path = "../domain/deepseek", optional = true }
 provider-exa = { path = "../domain/exa", optional = true }
 provider-openai = { path = "../domain/openai", optional = true }
+provider-opencode = { path = "../domain/opencode", optional = true }
 provider-siliconflow = { path = "../domain/siliconflow", optional = true }
 provider-volcengine = { path = "../domain/volcengine", optional = true }

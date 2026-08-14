@@ -16,6 +16,9 @@ pub use provider_exa as exa;
 #[cfg(feature = "openai")]
 pub use provider_openai as openai;
 
+#[cfg(feature = "opencode")]
+pub use provider_opencode as opencode;
+
 #[cfg(feature = "siliconflow")]
 pub use provider_siliconflow as siliconflow;
 
