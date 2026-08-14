@@ -6,31 +6,53 @@
 use std::{error, fmt};
 
 use reqwest::{Client, StatusCode, header};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{Credentials, ExposeSecret};
 
 const ENDPOINT: &str = "https://opencode.ai/zen/go/v1/usage";
 const USER_AGENT: &str = concat!("provider-opencode/", env!("CARGO_PKG_VERSION"));
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Response {
     pub usage: Usage,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Usage {
     pub rolling: UsageWindow,
     pub weekly: UsageWindow,
     pub monthly: UsageWindow,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageWindow {
     pub status: String,
     pub percent: f64,
     pub resets_at: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UsageWindowError {
+    NonFinite,
+    PercentageOutOfRange,
+}
+
+impl UsageWindow {
+    pub fn used_percent(&self) -> Result<f64, UsageWindowError> {
+        if !self.percent.is_finite() {
+            return Err(UsageWindowError::NonFinite);
+        }
+        if !(0.0..=100.0).contains(&self.percent) {
+            return Err(UsageWindowError::PercentageOutOfRange);
+        }
+        Ok(self.percent)
+    }
+
+    pub fn remaining_percent(&self) -> Result<f64, UsageWindowError> {
+        Ok(100.0 - self.used_percent()?)
+    }
 }
 
 #[derive(Debug)]
@@ -148,6 +170,7 @@ mod tests {
         .expect("request succeeds");
 
         assert_eq!(response.usage.rolling.percent, 12.5);
+        assert_eq!(response.usage.rolling.remaining_percent(), Ok(87.5));
         assert_eq!(response.usage.monthly.status, "rate-limited");
         assert_eq!(response.usage.weekly.resets_at, "2026-08-17T00:00:00.000Z");
 
@@ -157,6 +180,20 @@ mod tests {
         assert!(headers.starts_with("get /zen/go/v1/usage http/1.1\r\n"));
         assert!(headers.contains("\r\nauthorization: bearer go-key\r\n"));
         assert!(request_body.is_empty());
+    }
+
+    #[test]
+    fn rejects_invalid_usage_percentages() {
+        let window = UsageWindow {
+            status: "ok".into(),
+            percent: 101.0,
+            resets_at: "2026-08-15T01:02:03.000Z".into(),
+        };
+
+        assert_eq!(
+            window.remaining_percent(),
+            Err(UsageWindowError::PercentageOutOfRange)
+        );
     }
 
     fn serve(status: &'static str, response_body: &str) -> (String, Receiver<String>) {

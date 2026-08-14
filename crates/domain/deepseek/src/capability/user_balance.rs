@@ -6,7 +6,7 @@
 use std::{collections::BTreeMap, error, fmt};
 
 use reqwest::{Client, StatusCode, header};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{Credentials, ExposeSecret};
@@ -14,7 +14,7 @@ use crate::{Credentials, ExposeSecret};
 const ENDPOINT: &str = "https://api.deepseek.com/user/balance";
 const USER_AGENT: &str = concat!("provider-deepseek/", env!("CARGO_PKG_VERSION"));
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Response {
     pub is_available: bool,
     pub balance_infos: Vec<BalanceInfo>,
@@ -22,7 +22,7 @@ pub struct Response {
     pub extra: BTreeMap<String, Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BalanceInfo {
     pub currency: String,
     pub total_balance: String,
