@@ -33,6 +33,18 @@ pub struct UsageWindow {
     pub resets_at: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct ProviderError {
+    #[serde(rename = "type")]
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Deserialize)]
+struct ErrorEnvelope {
+    error: ProviderError,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UsageWindowError {
     NonFinite,
@@ -82,6 +94,12 @@ impl Error {
             Self::Response { body, .. } | Self::Decode { body, .. } => Some(body),
             _ => None,
         }
+    }
+
+    pub fn provider_error(&self) -> Option<ProviderError> {
+        serde_json::from_str::<ErrorEnvelope>(self.raw_body()?)
+            .ok()
+            .map(|envelope| envelope.error)
     }
 }
 
@@ -193,6 +211,22 @@ mod tests {
         assert_eq!(
             window.remaining_percent(),
             Err(UsageWindowError::PercentageOutOfRange)
+        );
+    }
+
+    #[test]
+    fn decodes_typed_provider_error() {
+        let error = Error::Response {
+            status: StatusCode::FORBIDDEN,
+            body: r#"{"type":"error","error":{"type":"EntitlementError","message":"OpenCode Go subscription required."},"debug":"not typed"}"#.into(),
+        };
+
+        assert_eq!(
+            error.provider_error(),
+            Some(ProviderError {
+                code: "EntitlementError".into(),
+                message: "OpenCode Go subscription required.".into(),
+            })
         );
     }
 
