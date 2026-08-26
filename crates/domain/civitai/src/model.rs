@@ -62,6 +62,8 @@ pub struct Stats {
 #[serde(rename_all = "camelCase")]
 pub struct ModelVersion {
     pub id: u64,
+    #[serde(default)]
+    pub model_id: Option<u64>,
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
