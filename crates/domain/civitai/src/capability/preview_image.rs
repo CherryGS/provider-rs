@@ -26,13 +26,21 @@ pub enum Error {
     InvalidPreviewUrl,
     UnexpectedContentType,
     Exchange(reqwest::Error),
-    Response { status: StatusCode, body: String },
+    /// Reading the response body failed after receiving the HTTP status.
+    BodyRead {
+        status: StatusCode,
+        source: reqwest::Error,
+    },
+    Response {
+        status: StatusCode,
+        body: String,
+    },
 }
 
 impl Error {
     pub fn status(&self) -> Option<StatusCode> {
         match self {
-            Self::Response { status, .. } => Some(*status),
+            Self::Response { status, .. } | Self::BodyRead { status, .. } => Some(*status),
             _ => None,
         }
     }
@@ -48,6 +56,12 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BodyRead { status, .. } => {
+                write!(
+                    formatter,
+                    "Civitai response body read failed after HTTP {status}"
+                )
+            }
             Self::InvalidPreviewUrl => {
                 formatter.write_str("Civitai preview URL is not an official HTTPS media URL")
             }
@@ -65,6 +79,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
+            Self::BodyRead { source, .. } => Some(source),
             Self::Exchange(source) => Some(source),
             _ => None,
         }
@@ -86,7 +101,10 @@ async fn fetch_from(client: &Client, url: Url) -> Result<Response, Error> {
         .map_err(Error::Exchange)?;
     let status = response.status();
     if !status.is_success() {
-        let body = response.bytes().await.map_err(Error::Exchange)?;
+        let body = response
+            .bytes()
+            .await
+            .map_err(|source| Error::BodyRead { status, source })?;
         return Err(Error::Response {
             status,
             body: String::from_utf8_lossy(&body).into_owned(),
@@ -105,7 +123,10 @@ async fn fetch_from(client: &Client, url: Url) -> Result<Response, Error> {
         })
         .ok_or(Error::UnexpectedContentType)?
         .to_owned();
-    let bytes = response.bytes().await.map_err(Error::Exchange)?;
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|source| Error::BodyRead { status, source })?;
 
     Ok(Response {
         content_type,
@@ -210,5 +231,26 @@ mod tests {
         assert_eq!(error.status(), Some(StatusCode::NOT_FOUND));
         assert_eq!(error.raw_body(), Some(r#"{"error":"preview unavailable"}"#));
         requests.recv().expect("captured request");
+    }
+
+    #[tokio::test]
+    async fn preserves_status_when_response_body_is_truncated() {
+        for (status, expected) in [
+            ("200 OK", StatusCode::OK),
+            ("429 Too Many Requests", StatusCode::TOO_MANY_REQUESTS),
+        ] {
+            let (endpoint, _requests) = provider_test_support::serve_truncated(status, "image/png");
+            let error = fetch_from(&Client::new(), Url::parse(&endpoint).expect("test URL"))
+                .await
+                .expect_err("truncated response must fail");
+            assert!(matches!(&error, Error::BodyRead { .. }));
+            assert_eq!(error.status(), Some(expected));
+            assert!(
+                std::error::Error::source(&error)
+                    .and_then(|source| source.downcast_ref::<reqwest::Error>())
+                    .is_some()
+            );
+            assert_eq!(error.raw_body(), None);
+        }
     }
 }

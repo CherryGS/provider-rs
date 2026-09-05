@@ -175,6 +175,11 @@ pub enum Error {
     Clock(time::error::Format),
     Signing,
     Exchange(reqwest::Error),
+    /// Reading the response body failed after receiving the HTTP status.
+    BodyRead {
+        status: StatusCode,
+        source: reqwest::Error,
+    },
     Response {
         status: StatusCode,
         body: String,
@@ -193,7 +198,7 @@ impl Error {
             Self::Encode(_) => ErrorKind::Encode,
             Self::Clock(_) => ErrorKind::Clock,
             Self::Signing => ErrorKind::Signing,
-            Self::Exchange(_) => ErrorKind::Transport,
+            Self::Exchange(_) | Self::BodyRead { .. } => ErrorKind::Transport,
             Self::Response { .. } => ErrorKind::HttpResponse,
             Self::Decode { .. } => ErrorKind::Decode,
         }
@@ -201,7 +206,7 @@ impl Error {
 
     pub fn status(&self) -> Option<StatusCode> {
         match self {
-            Self::Response { status, .. } => Some(*status),
+            Self::Response { status, .. } | Self::BodyRead { status, .. } => Some(*status),
             _ => None,
         }
     }
@@ -217,6 +222,12 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BodyRead { status, .. } => {
+                write!(
+                    formatter,
+                    "Volcengine response body read failed after HTTP {status}"
+                )
+            }
             Self::InvalidCredentials(field) => {
                 write!(formatter, "Volcengine credential `{field}` is empty")
             }
@@ -238,6 +249,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
+            Self::BodyRead { source, .. } => Some(source),
             Self::Encode(source) => Some(source),
             Self::Clock(source) => Some(source),
             Self::Exchange(source) => Some(source),
@@ -298,7 +310,10 @@ async fn execute(
         .await
         .map_err(Error::Exchange)?;
     let status = response.status();
-    let body = response.bytes().await.map_err(Error::Exchange)?;
+    let body = response
+        .bytes()
+        .await
+        .map_err(|source| Error::BodyRead { status, source })?;
 
     if !status.is_success() {
         return Err(Error::Response {
@@ -444,5 +459,39 @@ mod tests {
             invalid_reset.reset_at_ms(),
             Err(UsageWindowError::InvalidReset)
         );
+    }
+
+    #[tokio::test]
+    async fn preserves_status_when_response_body_is_truncated() {
+        for (status, expected) in [
+            ("200 OK", StatusCode::OK),
+            ("429 Too Many Requests", StatusCode::TOO_MANY_REQUESTS),
+        ] {
+            let (endpoint, _requests) =
+                provider_test_support::serve_truncated(status, "application/json");
+            let error = execute(
+                &Client::new(),
+                Credentials {
+                    access_key_id: &crate::SecretString::from("key"),
+                    secret_access_key: &crate::SecretString::from("secret"),
+                },
+                Request {
+                    seat_id: "seat",
+                    project_name: None,
+                },
+                &endpoint,
+                X_DATE,
+            )
+            .await
+            .expect_err("truncated response must fail");
+            assert!(matches!(&error, Error::BodyRead { .. }));
+            assert_eq!(error.status(), Some(expected));
+            assert!(
+                std::error::Error::source(&error)
+                    .and_then(|source| source.downcast_ref::<reqwest::Error>())
+                    .is_some()
+            );
+            assert_eq!(error.raw_body(), None);
+        }
     }
 }

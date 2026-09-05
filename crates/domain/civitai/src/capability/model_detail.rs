@@ -15,6 +15,11 @@ const USER_AGENT: &str = concat!("provider-civitai/", env!("CARGO_PKG_VERSION"))
 #[derive(Debug)]
 pub enum Error {
     Exchange(reqwest::Error),
+    /// Reading the response body failed after receiving the HTTP status.
+    BodyRead {
+        status: StatusCode,
+        source: reqwest::Error,
+    },
     Response {
         status: StatusCode,
         body: String,
@@ -28,7 +33,7 @@ pub enum Error {
 impl Error {
     pub fn status(&self) -> Option<StatusCode> {
         match self {
-            Self::Response { status, .. } => Some(*status),
+            Self::Response { status, .. } | Self::BodyRead { status, .. } => Some(*status),
             _ => None,
         }
     }
@@ -44,6 +49,12 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BodyRead { status, .. } => {
+                write!(
+                    formatter,
+                    "Civitai response body read failed after HTTP {status}"
+                )
+            }
             Self::Exchange(_) => formatter.write_str("Civitai model detail request failed"),
             Self::Response { status, .. } => {
                 write!(formatter, "Civitai model detail returned HTTP {status}")
@@ -58,6 +69,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
+            Self::BodyRead { source, .. } => Some(source),
             Self::Exchange(source) => Some(source),
             Self::Decode { source, .. } => Some(source),
             Self::Response { .. } => None,
@@ -78,7 +90,10 @@ async fn fetch_at(client: &Client, model_id: u64, endpoint: &str) -> Result<Mode
         .await
         .map_err(Error::Exchange)?;
     let status = response.status();
-    let body = response.bytes().await.map_err(Error::Exchange)?;
+    let body = response
+        .bytes()
+        .await
+        .map_err(|source| Error::BodyRead { status, source })?;
     if !status.is_success() {
         return Err(Error::Response {
             status,
@@ -96,7 +111,7 @@ async fn fetch_at(client: &Client, model_id: u64, endpoint: &str) -> Result<Mode
 mod tests {
     use reqwest::{Client, StatusCode};
 
-    use super::fetch_at;
+    use super::{Error, fetch_at};
     use provider_test_support::serve;
 
     #[tokio::test]
@@ -144,5 +159,27 @@ mod tests {
         assert_eq!(error.status(), Some(StatusCode::NOT_FOUND));
         assert_eq!(error.raw_body(), Some(r#"{"error":"No model with id 0"}"#));
         requests.recv().expect("captured request");
+    }
+
+    #[tokio::test]
+    async fn preserves_status_when_response_body_is_truncated() {
+        for (status, expected) in [
+            ("200 OK", StatusCode::OK),
+            ("429 Too Many Requests", StatusCode::TOO_MANY_REQUESTS),
+        ] {
+            let (endpoint, _requests) =
+                provider_test_support::serve_truncated(status, "application/json");
+            let error = fetch_at(&Client::new(), 1, &endpoint)
+                .await
+                .expect_err("truncated response must fail");
+            assert!(matches!(&error, Error::BodyRead { .. }));
+            assert_eq!(error.status(), Some(expected));
+            assert!(
+                std::error::Error::source(&error)
+                    .and_then(|source| source.downcast_ref::<reqwest::Error>())
+                    .is_some()
+            );
+            assert_eq!(error.raw_body(), None);
+        }
     }
 }

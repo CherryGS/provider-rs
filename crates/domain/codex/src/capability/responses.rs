@@ -145,7 +145,7 @@ pub struct Event {
 #[derive(Debug)]
 pub struct EventStream {
     response: reqwest::Response,
-    buffer: Vec<u8>,
+    buffer: FrameBuffer,
     finished: bool,
     pub request_id: Option<Box<str>>,
     pub model: Option<Box<str>>,
@@ -155,17 +155,23 @@ pub struct EventStream {
 impl EventStream {
     pub async fn next(&mut self) -> Result<Option<Event>, Error> {
         loop {
-            let frame = if let Some(frame) = take_frame(&mut self.buffer) {
+            let frame = if let Some(frame) = self.buffer.take_frame() {
                 frame
             } else if self.finished {
-                if self.buffer.is_empty() {
+                if self.buffer.bytes.is_empty() {
                     return Ok(None);
                 }
-                mem::take(&mut self.buffer)
+                mem::take(&mut self.buffer.bytes)
             } else {
-                match self.response.chunk().await.map_err(Error::Exchange)? {
+                let status = self.response.status();
+                match self
+                    .response
+                    .chunk()
+                    .await
+                    .map_err(|source| Error::BodyRead { status, source })?
+                {
                     Some(chunk) => {
-                        self.buffer.extend_from_slice(&chunk);
+                        self.buffer.bytes.extend_from_slice(&chunk);
                         continue;
                     }
                     None => {
@@ -179,7 +185,7 @@ impl EventStream {
                 ParsedFrame::Event(event) => return Ok(Some(event)),
                 ParsedFrame::Done => {
                     self.finished = true;
-                    self.buffer.clear();
+                    self.buffer.bytes.clear();
                     return Ok(None);
                 }
                 ParsedFrame::Ignore => {}
@@ -193,14 +199,37 @@ pub enum Error {
     InvalidCredentials(&'static str),
     InvalidRequest(&'static str),
     Exchange(reqwest::Error),
-    Response { status: StatusCode, body: Box<str> },
+    /// Reading the response body failed after receiving the HTTP status.
+    BodyRead {
+        status: StatusCode,
+        source: reqwest::Error,
+    },
+    Response {
+        status: StatusCode,
+        body: Box<str>,
+    },
     Utf8(str::Utf8Error),
     Decode(serde_json::Error),
+}
+
+impl Error {
+    pub fn status(&self) -> Option<StatusCode> {
+        match self {
+            Self::Response { status, .. } | Self::BodyRead { status, .. } => Some(*status),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BodyRead { status, .. } => {
+                write!(
+                    formatter,
+                    "Codex response body read failed after HTTP {status}"
+                )
+            }
             Self::InvalidCredentials(field) => write!(formatter, "Codex {field} is empty"),
             Self::InvalidRequest(field) => write!(formatter, "Codex Responses {field} is empty"),
             Self::Exchange(error) => write!(formatter, "Codex Responses request failed: {error}"),
@@ -216,6 +245,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
+            Self::BodyRead { source, .. } => Some(source),
             Self::Exchange(error) => Some(error),
             Self::Utf8(error) => Some(error),
             Self::Decode(error) => Some(error),
@@ -264,7 +294,7 @@ async fn stream_from(
         let body = response
             .text()
             .await
-            .map_err(Error::Exchange)?
+            .map_err(|source| Error::BodyRead { status, source })?
             .into_boxed_str();
         return Err(Error::Response { status, body });
     }
@@ -276,7 +306,7 @@ async fn stream_from(
 
     Ok(EventStream {
         response,
-        buffer: Vec::new(),
+        buffer: FrameBuffer::default(),
         finished: false,
         request_id,
         model,
@@ -292,29 +322,41 @@ fn response_header(response: &reqwest::Response, name: &str) -> Option<Box<str>>
         .map(Into::into)
 }
 
-fn take_frame(buffer: &mut Vec<u8>) -> Option<Vec<u8>> {
-    let delimiter = [
-        buffer
-            .windows(4)
-            .position(|window| window == b"\r\n\r\n")
-            .map(|index| (index, 4)),
-        buffer
-            .windows(2)
-            .position(|window| window == b"\n\n")
-            .map(|index| (index, 2)),
-        buffer
-            .windows(2)
-            .position(|window| window == b"\r\r")
-            .map(|index| (index, 2)),
-    ]
-    .into_iter()
-    .flatten()
-    .min_by_key(|(index, _)| *index)?;
+#[derive(Debug, Default)]
+struct FrameBuffer {
+    bytes: Vec<u8>,
+    scanned: usize,
+    line_start: usize,
+    skip_lf: bool,
+}
 
-    let (index, length) = delimiter;
-    let mut frame: Vec<_> = buffer.drain(..index + length).collect();
-    frame.truncate(index);
-    Some(frame)
+impl FrameBuffer {
+    fn take_frame(&mut self) -> Option<Vec<u8>> {
+        while let Some(&byte) = self.bytes.get(self.scanned) {
+            let index = self.scanned;
+            self.scanned += 1;
+
+            // CR ends a line immediately. Swallow its optional LF even when
+            // the pair crosses a network chunk or a dispatched frame.
+            if mem::take(&mut self.skip_lf) && byte == b'\n' {
+                self.line_start = self.scanned;
+                continue;
+            }
+            if matches!(byte, b'\r' | b'\n') {
+                self.skip_lf = byte == b'\r';
+                let empty_line = index == self.line_start;
+                self.line_start = self.scanned;
+                if empty_line {
+                    let mut frame: Vec<_> = self.bytes.drain(..self.scanned).collect();
+                    frame.truncate(index);
+                    self.scanned = 0;
+                    self.line_start = 0;
+                    return Some(frame);
+                }
+            }
+        }
+        None
+    }
 }
 
 enum ParsedFrame {
@@ -328,7 +370,7 @@ fn parse_frame(frame: &[u8]) -> Result<ParsedFrame, Error> {
     let mut data = String::new();
     let mut saw_data = false;
 
-    for line in frame.lines() {
+    for line in frame.split(['\r', '\n']) {
         let value = if line == "data" {
             ""
         } else if let Some(value) = line.strip_prefix("data:") {
@@ -365,6 +407,137 @@ mod tests {
         net::TcpListener,
         thread::{self, JoinHandle},
     };
+
+    #[test]
+    fn parses_line_endings_across_chunk_boundaries() {
+        for line_ending in ["\r", "\n", "\r\n"] {
+            let wire = format!(
+                ": keepalive{line_ending}event: message{line_ending}\
+                 data: {{\"type\":\"response.output_text.delta\",{line_ending}\
+                 data: \"delta\":\"hello 🌍\"}}{line_ending}{line_ending}\
+                 data: [DONE]{line_ending}{line_ending}"
+            );
+            assert_decodes_chunks(wire.as_bytes());
+        }
+    }
+
+    #[test]
+    fn parses_mixed_line_endings_across_chunk_boundaries() {
+        assert_decodes_chunks(
+            concat!(
+                ": keepalive\r\n",
+                "event: message\r",
+                "data: {\"type\":\"response.output_text.delta\",\n",
+                "data: \"delta\":\"hello 🌍\"}\n\r",
+                "data: [DONE]\r\n\r",
+            )
+            .as_bytes(),
+        );
+    }
+
+    fn assert_decodes_chunks(wire: &[u8]) {
+        for chunk_size in 1..=wire.len() {
+            let mut buffer = FrameBuffer::default();
+            let mut events = Vec::new();
+            let mut done = 0;
+            for chunk in wire.chunks(chunk_size) {
+                buffer.bytes.extend_from_slice(chunk);
+                while let Some(frame) = buffer.take_frame() {
+                    match parse_frame(&frame).expect("valid SSE frame") {
+                        ParsedFrame::Event(event) => events.push(event),
+                        ParsedFrame::Done => done += 1,
+                        ParsedFrame::Ignore => {}
+                    }
+                }
+            }
+            assert_eq!(
+                events,
+                vec![Event {
+                    kind: "response.output_text.delta".into(),
+                    fields: Map::from_iter([("delta".into(), json!("hello 🌍"))]),
+                }],
+                "chunk size {chunk_size}"
+            );
+            assert_eq!(done, 1, "chunk size {chunk_size}");
+        }
+    }
+
+    #[tokio::test]
+    async fn streams_cr_terminated_events_without_losing_following_frames() {
+        let (endpoint, server) = serve_once(
+            "200 OK",
+            "",
+            concat!(
+                "event: message\rdata: {\"type\":\"response.created\"}\r\r\n",
+                "data: {\"type\":\"response.completed\"}\n\r",
+                "data: [DONE]\r\r",
+            ),
+        );
+        let mut events = stream_from(
+            &Client::new(),
+            Credentials::new(
+                &crate::SecretString::from("token"),
+                &crate::SecretString::from("account"),
+            ),
+            &Request::new("model", Vec::new()),
+            &endpoint,
+        )
+        .await
+        .expect("stream opens");
+        assert_eq!(
+            events
+                .next()
+                .await
+                .expect("valid event")
+                .expect("created")
+                .kind,
+            "response.created"
+        );
+        assert_eq!(
+            events
+                .next()
+                .await
+                .expect("valid event")
+                .expect("completed")
+                .kind,
+            "response.completed"
+        );
+        assert!(events.next().await.expect("done").is_none());
+        assert!(events.next().await.expect("still done").is_none());
+        server.join().expect("server finishes");
+    }
+
+    #[tokio::test]
+    async fn preserves_status_when_response_body_is_truncated() {
+        for (status, expected) in [
+            ("200 OK", StatusCode::OK),
+            ("429 Too Many Requests", StatusCode::TOO_MANY_REQUESTS),
+        ] {
+            let (endpoint, _requests) =
+                provider_test_support::serve_truncated(status, "text/event-stream");
+            let result = stream_from(
+                &Client::new(),
+                Credentials::new(
+                    &crate::SecretString::from("token"),
+                    &crate::SecretString::from("account"),
+                ),
+                &Request::new("model", Vec::new()),
+                &endpoint,
+            )
+            .await;
+            let error = match result {
+                Ok(mut stream) => stream.next().await.expect_err("truncated stream must fail"),
+                Err(error) => error,
+            };
+            assert!(matches!(&error, Error::BodyRead { .. }));
+            assert_eq!(error.status(), Some(expected));
+            assert!(
+                std::error::Error::source(&error)
+                    .and_then(|source| source.downcast_ref::<reqwest::Error>())
+                    .is_some()
+            );
+        }
+    }
 
     fn serve_once(status: &str, headers: &str, body: &str) -> (String, JoinHandle<Vec<u8>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();

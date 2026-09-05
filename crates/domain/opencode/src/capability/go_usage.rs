@@ -71,6 +71,11 @@ impl UsageWindow {
 pub enum Error {
     InvalidCredentials,
     Exchange(reqwest::Error),
+    /// Reading the response body failed after receiving the HTTP status.
+    BodyRead {
+        status: StatusCode,
+        source: reqwest::Error,
+    },
     Response {
         status: StatusCode,
         body: String,
@@ -84,7 +89,7 @@ pub enum Error {
 impl Error {
     pub fn status(&self) -> Option<StatusCode> {
         match self {
-            Self::Response { status, .. } => Some(*status),
+            Self::Response { status, .. } | Self::BodyRead { status, .. } => Some(*status),
             _ => None,
         }
     }
@@ -106,6 +111,12 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BodyRead { status, .. } => {
+                write!(
+                    formatter,
+                    "OpenCode response body read failed after HTTP {status}"
+                )
+            }
             Self::InvalidCredentials => formatter.write_str("OpenCode API key is empty"),
             Self::Exchange(_) => formatter.write_str("OpenCode Go usage request failed"),
             Self::Response { status, .. } => {
@@ -119,6 +130,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
+            Self::BodyRead { source, .. } => Some(source),
             Self::Exchange(source) => Some(source),
             Self::Decode { source, .. } => Some(source),
             _ => None,
@@ -148,7 +160,10 @@ async fn get_at(
         .await
         .map_err(Error::Exchange)?;
     let status = response.status();
-    let body = response.bytes().await.map_err(Error::Exchange)?;
+    let body = response
+        .bytes()
+        .await
+        .map_err(|source| Error::BodyRead { status, source })?;
     if !status.is_success() {
         return Err(Error::Response {
             status,
@@ -222,5 +237,33 @@ mod tests {
                 message: "OpenCode Go subscription required.".into(),
             })
         );
+    }
+
+    #[tokio::test]
+    async fn preserves_status_when_response_body_is_truncated() {
+        for (status, expected) in [
+            ("200 OK", StatusCode::OK),
+            ("429 Too Many Requests", StatusCode::TOO_MANY_REQUESTS),
+        ] {
+            let (endpoint, _requests) =
+                provider_test_support::serve_truncated(status, "application/json");
+            let error = get_at(
+                &Client::new(),
+                Credentials {
+                    api_key: &crate::SecretString::from("key"),
+                },
+                &endpoint,
+            )
+            .await
+            .expect_err("truncated response must fail");
+            assert!(matches!(&error, Error::BodyRead { .. }));
+            assert_eq!(error.status(), Some(expected));
+            assert!(
+                std::error::Error::source(&error)
+                    .and_then(|source| source.downcast_ref::<reqwest::Error>())
+                    .is_some()
+            );
+            assert_eq!(error.raw_body(), None);
+        }
     }
 }

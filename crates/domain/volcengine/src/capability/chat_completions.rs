@@ -312,6 +312,11 @@ pub enum Error {
     InvalidCredentials(&'static str),
     InvalidRequest(&'static str),
     Exchange(reqwest::Error),
+    /// Reading the response body failed after receiving the HTTP status.
+    BodyRead {
+        status: StatusCode,
+        source: reqwest::Error,
+    },
     Response {
         status: StatusCode,
         body: String,
@@ -325,7 +330,7 @@ pub enum Error {
 impl Error {
     pub fn status(&self) -> Option<StatusCode> {
         match self {
-            Self::Response { status, .. } => Some(*status),
+            Self::Response { status, .. } | Self::BodyRead { status, .. } => Some(*status),
             _ => None,
         }
     }
@@ -341,6 +346,12 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BodyRead { status, .. } => {
+                write!(
+                    formatter,
+                    "Volcengine response body read failed after HTTP {status}"
+                )
+            }
             Self::InvalidCredentials(field) => {
                 write!(formatter, "Ark credential `{field}` is empty")
             }
@@ -361,6 +372,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
+            Self::BodyRead { source, .. } => Some(source),
             Self::Exchange(source) => Some(source),
             Self::Decode { source, .. } => Some(source),
             _ => None,
@@ -394,7 +406,10 @@ async fn create_at(
         .await
         .map_err(Error::Exchange)?;
     let status = response.status();
-    let body = response.bytes().await.map_err(Error::Exchange)?;
+    let body = response
+        .bytes()
+        .await
+        .map_err(|source| Error::BodyRead { status, source })?;
     if !status.is_success() {
         return Err(Error::Response {
             status,
@@ -530,5 +545,34 @@ mod tests {
         assert_eq!(error.status(), Some(StatusCode::BAD_REQUEST));
         assert_eq!(error.raw_body(), Some(body));
         requests.recv().expect("captured request");
+    }
+
+    #[tokio::test]
+    async fn preserves_status_when_response_body_is_truncated() {
+        for (status, expected) in [
+            ("200 OK", StatusCode::OK),
+            ("429 Too Many Requests", StatusCode::TOO_MANY_REQUESTS),
+        ] {
+            let (endpoint, _requests) =
+                provider_test_support::serve_truncated(status, "application/json");
+            let error = create_at(
+                &Client::new(),
+                ArkCredentials {
+                    api_key: &crate::SecretString::from("key"),
+                },
+                &Request::new("model", vec![Message::user("hello")]),
+                &endpoint,
+            )
+            .await
+            .expect_err("truncated response must fail");
+            assert!(matches!(&error, Error::BodyRead { .. }));
+            assert_eq!(error.status(), Some(expected));
+            assert!(
+                std::error::Error::source(&error)
+                    .and_then(|source| source.downcast_ref::<reqwest::Error>())
+                    .is_some()
+            );
+            assert_eq!(error.raw_body(), None);
+        }
     }
 }

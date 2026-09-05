@@ -281,6 +281,11 @@ pub struct RateLimitResetCredits {
 pub enum Error {
     InvalidCredentials(&'static str),
     Request(reqwest::Error),
+    /// Reading the response body failed after receiving the HTTP status.
+    BodyRead {
+        status: StatusCode,
+        source: reqwest::Error,
+    },
     Response {
         status: StatusCode,
         body: Box<str>,
@@ -303,7 +308,7 @@ impl Error {
     pub const fn kind(&self) -> ErrorKind {
         match self {
             Self::InvalidCredentials(_) => ErrorKind::InvalidCredentials,
-            Self::Request(_) => ErrorKind::Transport,
+            Self::Request(_) | Self::BodyRead { .. } => ErrorKind::Transport,
             Self::Response { .. } => ErrorKind::HttpResponse,
             Self::Decode { .. } => ErrorKind::Decode,
         }
@@ -311,7 +316,7 @@ impl Error {
 
     pub const fn status(&self) -> Option<StatusCode> {
         match self {
-            Self::Response { status, .. } => Some(*status),
+            Self::Response { status, .. } | Self::BodyRead { status, .. } => Some(*status),
             _ => None,
         }
     }
@@ -327,6 +332,12 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BodyRead { status, .. } => {
+                write!(
+                    formatter,
+                    "Codex response body read failed after HTTP {status}"
+                )
+            }
             Self::InvalidCredentials(field) => write!(formatter, "Codex {field} is empty"),
             Self::Request(_) => formatter.write_str("Codex usage request failed"),
             Self::Response { status, .. } => {
@@ -340,6 +351,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
+            Self::BodyRead { source, .. } => Some(source),
             Self::Request(error) => Some(error),
             Self::Decode { source, .. } => Some(source),
             Self::InvalidCredentials(_) | Self::Response { .. } => None,
@@ -372,17 +384,20 @@ async fn fetch_from(
         .await
         .map_err(Error::Request)?;
 
-    if !response.status().is_success() {
-        let status = response.status();
+    let status = response.status();
+    if !status.is_success() {
         let body = response
             .text()
             .await
-            .map_err(Error::Request)?
+            .map_err(|source| Error::BodyRead { status, source })?
             .into_boxed_str();
         return Err(Error::Response { status, body });
     }
 
-    let body = response.bytes().await.map_err(Error::Request)?;
+    let body = response
+        .bytes()
+        .await
+        .map_err(|source| Error::BodyRead { status, source })?;
     serde_json::from_slice(&body).map_err(|source| Error::Decode {
         source,
         body: String::from_utf8_lossy(&body).into_owned().into_boxed_str(),
@@ -619,6 +634,35 @@ mod tests {
                 rate_limit_reset_credits: None,
             };
             assert_eq!(usage.credit_state(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn preserves_status_when_response_body_is_truncated() {
+        for (status, expected) in [
+            ("200 OK", StatusCode::OK),
+            ("429 Too Many Requests", StatusCode::TOO_MANY_REQUESTS),
+        ] {
+            let (endpoint, _requests) =
+                provider_test_support::serve_truncated(status, "application/json");
+            let error = fetch_from(
+                &Client::new(),
+                Credentials {
+                    access_token: &crate::SecretString::from("token"),
+                    account_id: &crate::SecretString::from("account"),
+                },
+                &endpoint,
+            )
+            .await
+            .expect_err("truncated response must fail");
+            assert!(matches!(&error, Error::BodyRead { .. }));
+            assert_eq!(error.status(), Some(expected));
+            assert!(
+                std::error::Error::source(&error)
+                    .and_then(|source| source.downcast_ref::<reqwest::Error>())
+                    .is_some()
+            );
+            assert_eq!(error.raw_body(), None);
         }
     }
 }

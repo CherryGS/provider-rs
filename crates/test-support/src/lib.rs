@@ -20,9 +20,27 @@ pub fn serve(
     content_type: &'static str,
     response_body: impl AsRef<[u8]>,
 ) -> (String, Receiver<String>) {
+    let body = response_body.as_ref();
+    serve_with_length(status, content_type, body, body.len())
+}
+
+/// Sends a partial body and closes the connection before Content-Length is met.
+pub fn serve_truncated(
+    status: &'static str,
+    content_type: &'static str,
+) -> (String, Receiver<String>) {
+    serve_with_length(status, content_type, b"{}", 4)
+}
+
+fn serve_with_length(
+    status: &'static str,
+    content_type: &'static str,
+    response_body: &[u8],
+    content_length: usize,
+) -> (String, Receiver<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
     let address = listener.local_addr().expect("test server address");
-    let response_body = response_body.as_ref().to_owned();
+    let response_body = response_body.to_owned();
     let (sender, receiver) = mpsc::channel();
 
     thread::spawn(move || {
@@ -37,7 +55,7 @@ pub fn serve(
         write!(
             stream,
             "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
-            response_body.len()
+            content_length
         )
         .expect("write response headers");
         stream

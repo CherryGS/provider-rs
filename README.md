@@ -54,6 +54,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 Optional composed clients exist only for providers where they remove useful
 repetition. Standalone capability functions remain the primary API.
 
+Errors distinguish request/exchange failures from `BodyRead { status, source }`
+failures after HTTP headers arrive. `status()` preserves the received status,
+including a successful status when its body is truncated, and
+`std::error::Error::source()` preserves the underlying reqwest error. Consumers
+that exhaustively match an endpoint's error enum must handle `BodyRead`.
+
 ## CLI
 
 The narrow CLI currently exposes Codex account usage:

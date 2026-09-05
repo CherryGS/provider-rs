@@ -87,6 +87,11 @@ impl error::Error for ParseBlake3HashError {}
 #[derive(Debug)]
 pub enum Error {
     Exchange(reqwest::Error),
+    /// Reading the response body failed after receiving the HTTP status.
+    BodyRead {
+        status: StatusCode,
+        source: reqwest::Error,
+    },
     Response {
         status: StatusCode,
         body: String,
@@ -100,7 +105,7 @@ pub enum Error {
 impl Error {
     pub fn status(&self) -> Option<StatusCode> {
         match self {
-            Self::Response { status, .. } => Some(*status),
+            Self::Response { status, .. } | Self::BodyRead { status, .. } => Some(*status),
             _ => None,
         }
     }
@@ -108,7 +113,7 @@ impl Error {
     pub fn raw_body(&self) -> Option<&str> {
         match self {
             Self::Response { body, .. } | Self::Decode { body, .. } => Some(body),
-            Self::Exchange(_) => None,
+            Self::Exchange(_) | Self::BodyRead { .. } => None,
         }
     }
 }
@@ -116,6 +121,12 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BodyRead { status, .. } => {
+                write!(
+                    formatter,
+                    "Civitai response body read failed after HTTP {status}"
+                )
+            }
             Self::Exchange(_) => formatter.write_str("Civitai model-version hash lookup failed"),
             Self::Response { status, .. } => {
                 write!(
@@ -133,6 +144,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
+            Self::BodyRead { source, .. } => Some(source),
             Self::Exchange(source) => Some(source),
             Self::Decode { source, .. } => Some(source),
             Self::Response { .. } => None,
@@ -157,7 +169,10 @@ async fn fetch_at(
         .await
         .map_err(Error::Exchange)?;
     let status = response.status();
-    let body = response.bytes().await.map_err(Error::Exchange)?;
+    let body = response
+        .bytes()
+        .await
+        .map_err(|source| Error::BodyRead { status, source })?;
     if !status.is_success() {
         return Err(Error::Response {
             status,
@@ -289,5 +304,27 @@ mod tests {
         assert!(matches!(error, Error::Decode { .. }));
         assert_eq!(error.raw_body(), Some(r#"{"id":"not-a-number"}"#));
         requests.recv().expect("captured request");
+    }
+
+    #[tokio::test]
+    async fn preserves_status_when_response_body_is_truncated() {
+        for (status, expected) in [
+            ("200 OK", StatusCode::OK),
+            ("429 Too Many Requests", StatusCode::TOO_MANY_REQUESTS),
+        ] {
+            let (endpoint, _requests) =
+                provider_test_support::serve_truncated(status, "application/json");
+            let error = fetch_at(&Client::new(), Blake3Hash::from_bytes([1; 32]), &endpoint)
+                .await
+                .expect_err("truncated response must fail");
+            assert!(matches!(&error, Error::BodyRead { .. }));
+            assert_eq!(error.status(), Some(expected));
+            assert!(
+                std::error::Error::source(&error)
+                    .and_then(|source| source.downcast_ref::<reqwest::Error>())
+                    .is_some()
+            );
+            assert_eq!(error.raw_body(), None);
+        }
     }
 }

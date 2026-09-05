@@ -99,6 +99,11 @@ pub enum Error {
     InvalidToken(&'static str),
     AccountMismatch,
     Transport(reqwest::Error),
+    /// Reading the response body failed after receiving the HTTP status.
+    BodyRead {
+        status: StatusCode,
+        source: reqwest::Error,
+    },
     Response {
         status: StatusCode,
         body: Box<str>,
@@ -112,7 +117,7 @@ pub enum Error {
 impl Error {
     pub const fn status(&self) -> Option<StatusCode> {
         match self {
-            Self::Response { status, .. } => Some(*status),
+            Self::Response { status, .. } | Self::BodyRead { status, .. } => Some(*status),
             _ => None,
         }
     }
@@ -128,6 +133,12 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::BodyRead { status, .. } => {
+                write!(
+                    formatter,
+                    "Codex response body read failed after HTTP {status}"
+                )
+            }
             Self::InvalidInput(field) => write!(formatter, "Codex OAuth {field} is invalid"),
             Self::StateMismatch => formatter.write_str("Codex OAuth state does not match"),
             Self::InvalidToken(field) => {
@@ -150,6 +161,7 @@ impl fmt::Display for Error {
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
+            Self::BodyRead { source, .. } => Some(source),
             Self::Transport(source) => Some(source),
             Self::Decode { source, .. } => Some(source),
             _ => None,
@@ -324,7 +336,7 @@ async fn revoke_at(
     let body = response
         .text()
         .await
-        .map_err(Error::Transport)?
+        .map_err(|source| Error::BodyRead { status, source })?
         .into_boxed_str();
     Err(Error::Response { status, body })
 }
@@ -402,7 +414,10 @@ fn decode_jwt_payload<T: DeserializeOwned>(token: &str) -> Result<T, Error> {
 
 async fn decode_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T, Error> {
     let status = response.status();
-    let body = response.bytes().await.map_err(Error::Transport)?;
+    let body = response
+        .bytes()
+        .await
+        .map_err(|source| Error::BodyRead { status, source })?;
     let body_text = || String::from_utf8_lossy(&body).into_owned().into_boxed_str();
     if !status.is_success() {
         return Err(Error::Response {
@@ -669,6 +684,55 @@ mod tests {
 
     fn jwt(payload: &str) -> String {
         format!("e30.{}.c2ln", URL_SAFE_NO_PAD.encode(payload))
+    }
+
+    #[tokio::test]
+    async fn preserves_status_when_oauth_response_body_is_truncated() {
+        for (status, expected) in [
+            ("200 OK", StatusCode::OK),
+            ("429 Too Many Requests", StatusCode::TOO_MANY_REQUESTS),
+        ] {
+            let (endpoint, _requests) =
+                provider_test_support::serve_truncated(status, "application/json");
+            let pending = begin_login_at(&endpoint, "test-client", DEFAULT_REDIRECT_URI.to_owned())
+                .expect("valid login");
+            let state = pending.state().to_owned();
+            let error = exchange_code(&Client::new(), pending, "code", &state)
+                .await
+                .expect_err("truncated response must fail");
+            assert!(matches!(&error, Error::BodyRead { .. }));
+            assert_eq!(error.status(), Some(expected));
+            assert!(
+                std::error::Error::source(&error)
+                    .and_then(|source| source.downcast_ref::<reqwest::Error>())
+                    .is_some()
+            );
+            assert_eq!(error.raw_body(), None);
+        }
+    }
+
+    #[tokio::test]
+    async fn preserves_revoke_status_when_error_body_is_truncated() {
+        let (endpoint, _requests) =
+            provider_test_support::serve_truncated("429 Too Many Requests", "application/json");
+        let tokens = Tokens {
+            id_token: "id-secret".into(),
+            access_token: "access-secret".into(),
+            refresh_token: "refresh-secret".into(),
+            account_id: "account-secret".into(),
+        };
+        let error = revoke_at(&Client::new(), &tokens, &endpoint, "test-client")
+            .await
+            .expect_err("truncated response must fail");
+        assert!(matches!(&error, Error::BodyRead { .. }));
+        assert_eq!(error.status(), Some(StatusCode::TOO_MANY_REQUESTS));
+        assert!(
+            std::error::Error::source(&error)
+                .and_then(|source| source.downcast_ref::<reqwest::Error>())
+                .is_some()
+        );
+        assert_eq!(error.raw_body(), None);
+        assert!(!error.to_string().contains("secret"));
     }
 
     fn serve(responses: &[(&str, String)]) -> (String, Receiver<String>) {
