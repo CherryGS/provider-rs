@@ -1,0 +1,14 @@
+[package]
+name = "provider-typesafe"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+reqwest.workspace = true
+secrecy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+provider-test-support.workspace = true
+tokio.workspace = true

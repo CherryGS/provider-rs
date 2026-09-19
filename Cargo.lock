@@ -810,6 +810,7 @@ dependencies = [
  "provider-openai",
  "provider-opencode",
  "provider-siliconflow",
+ "provider-typesafe",
  "provider-volcengine",
 ]
 
@@ -926,6 +927,18 @@ dependencies = [
 [[package]]
 name = "provider-test-support"
 version = "0.0.0"
+
+[[package]]
+name = "provider-typesafe"
+version = "0.1.0"
+dependencies = [
+ "provider-test-support",
+ "reqwest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "provider-volcengine"

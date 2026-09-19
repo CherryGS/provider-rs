@@ -13,6 +13,7 @@ exa = ["dep:provider-exa"]
 openai = ["dep:provider-openai"]
 opencode = ["dep:provider-opencode"]
 siliconflow = ["dep:provider-siliconflow"]
+typesafe = ["dep:provider-typesafe"]
 volcengine = ["dep:provider-volcengine"]
 
 [dependencies]
@@ -24,4 +25,5 @@ provider-exa = { path = "../domain/exa", optional = true }
 provider-openai = { path = "../domain/openai", optional = true }
 provider-opencode = { path = "../domain/opencode", optional = true }
 provider-siliconflow = { path = "../domain/siliconflow", optional = true }
+provider-typesafe = { path = "../domain/typesafe", optional = true }
 provider-volcengine = { path = "../domain/volcengine", optional = true }

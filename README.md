@@ -20,6 +20,7 @@ stability guarantees matter.
 | OpenAI | `provider-openai` / `openai` | Chat Completions, Responses, embeddings, model list |
 | OpenCode | `provider-opencode` / `opencode` | Go quota usage |
 | SiliconFlow | `provider-siliconflow` / `siliconflow` | Embeddings, rerank, model list |
+| TypeSafe (Jev) | `provider-typesafe` / `typesafe` | System One (Choice, Score, Noul), model list |
 | Volcengine | `provider-volcengine` / `volcengine` | Chat Completions, text and multimodal embeddings, Coding Plan usage, Agent Plan usage |
 
 OpenCode Zen balance is intentionally absent because no observable balance API
@@ -53,6 +54,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Optional composed clients exist only for providers where they remove useful
 repetition. Standalone capability functions remain the primary API.
+
+For Jev, enable the facade's `typesafe` feature (or depend on `provider-typesafe`
+directly). The caller loads `TYPESAFE_API_KEY` and passes it explicitly:
+
+```rust
+use provider::typesafe::{Credentials, SecretString, capability::system_one};
+
+async fn evaluate() -> Result<(), Box<dyn std::error::Error>> {
+    let api_key = SecretString::from(std::env::var("TYPESAFE_API_KEY")?);
+    let request = system_one::Request::new(
+        "jev-latest",
+        "The nightly export failed and the report is due this morning.",
+        [("urgent".into(), system_one::Question::noul("Does this need urgent attention?"))].into(),
+    );
+    let response = system_one::call(
+        &reqwest::Client::new(),
+        Credentials::new(&api_key),
+        &request,
+    ).await?;
+    if let Some(system_one::Answer::Noul(answer)) = response.answers.get("urgent") {
+        println!("Urgency probability: {}", answer.noul);
+    }
+    Ok(())
+}
+```
+
+`Question::choice` and `Question::score` can be mixed with Noul questions in the
+same request. Responses preserve probability distributions, confidence, score
+legends, and optional token counts. `typesafe::capability::model_list::call`
+lists available models; `typesafe::Client` optionally binds credentials and the
+HTTP client for both endpoints. Contracts follow the official
+[System One API](https://docs.typesafe.ai/api) and
+[model list](https://docs.typesafe.ai/models).
 
 Errors distinguish request/exchange failures from `BodyRead { status, source }`
 failures after HTTP headers arrive. `status()` preserves the received status,

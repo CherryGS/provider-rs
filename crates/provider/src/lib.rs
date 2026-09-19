@@ -22,5 +22,8 @@ pub use provider_opencode as opencode;
 #[cfg(feature = "siliconflow")]
 pub use provider_siliconflow as siliconflow;
 
+#[cfg(feature = "typesafe")]
+pub use provider_typesafe as typesafe;
+
 #[cfg(feature = "volcengine")]
 pub use provider_volcengine as volcengine;
