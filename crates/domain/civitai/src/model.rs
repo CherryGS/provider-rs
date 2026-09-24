@@ -130,6 +130,3 @@ pub struct PreviewMedia {
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
-
-/// Backwards-compatible name for previews, which may include videos.
-pub type PreviewImage = PreviewMedia;

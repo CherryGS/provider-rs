@@ -168,9 +168,7 @@ mod tests {
         assert_eq!(previews.len(), 2);
         assert_eq!(previews[0].kind.as_deref(), Some("image"));
         let video: &crate::model::PreviewMedia = &previews[1];
-        // The historical type name remains usable with the same response data.
-        let legacy: &crate::model::PreviewImage = video;
-        assert_eq!(legacy.kind.as_deref(), Some("video"));
+        assert_eq!(video.kind.as_deref(), Some("video"));
         assert_eq!(
             video.url,
             "https://image.civitai.com/media/original=true/7.mp4"

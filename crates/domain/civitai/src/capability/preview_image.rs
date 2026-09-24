@@ -11,7 +11,7 @@ use std::{error, fmt};
 use bytes::Bytes;
 use reqwest::{Client, StatusCode, Url, header};
 
-use crate::model::PreviewImage;
+use crate::model::PreviewMedia;
 
 const USER_AGENT: &str = concat!("provider-civitai/", env!("CARGO_PKG_VERSION"));
 
@@ -86,7 +86,7 @@ impl error::Error for Error {
     }
 }
 
-pub async fn call(client: &Client, preview: &PreviewImage) -> Result<Response, Error> {
+pub async fn call(client: &Client, preview: &PreviewMedia) -> Result<Response, Error> {
     let url = validate_url(&preview.url)?;
     fetch_from(client, url).await
 }
@@ -156,10 +156,10 @@ mod tests {
     use super::{Error, call, fetch_from};
     use provider_test_support::serve;
 
-    use crate::model::PreviewImage;
+    use crate::model::PreviewMedia;
 
-    fn preview(url: impl Into<String>) -> PreviewImage {
-        PreviewImage {
+    fn preview(url: impl Into<String>) -> PreviewMedia {
+        PreviewMedia {
             id: Some(7),
             url: url.into(),
             nsfw_level: Some(1),
