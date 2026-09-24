@@ -148,6 +148,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn discovers_video_previews_with_unknown_metadata() {
+        let body = br#"{
+            "id": 42, "name": "Motion", "type": "LORA",
+            "modelVersions": [{
+                "id": 84, "name": "v1", "images": [
+                    {"url": "https://image.civitai.com/cover.jpeg", "type": "image"},
+                    {"url": "https://image.civitai.com/media/original=true/7.mp4",
+                     "type": "video", "width": 1024, "height": 576,
+                     "meta": {"duration": 3.5}}
+                ]
+            }]
+        }"#;
+        let (base_url, requests) = serve("200 OK", "application/json", body);
+        let model = fetch_at(&Client::new(), 42, &format!("{base_url}/api/v1/models"))
+            .await
+            .expect("mixed preview discovery");
+        let previews = &model.model_versions[0].images;
+        assert_eq!(previews.len(), 2);
+        assert_eq!(previews[0].kind.as_deref(), Some("image"));
+        let video: &crate::model::PreviewMedia = &previews[1];
+        // The historical type name remains usable with the same response data.
+        let legacy: &crate::model::PreviewImage = video;
+        assert_eq!(legacy.kind.as_deref(), Some("video"));
+        assert_eq!(
+            video.url,
+            "https://image.civitai.com/media/original=true/7.mp4"
+        );
+        assert_eq!((video.width, video.height), (Some(1024), Some(576)));
+        assert_eq!(video.extra["meta"]["duration"], 3.5);
+        requests.recv().expect("captured request");
+    }
+
+    #[tokio::test]
     async fn preserves_unsuccessful_status_and_body() {
         let body = br#"{"error":"No model with id 0"}"#;
         let (base_url, requests) = serve("404 Not Found", "application/json", body);

@@ -82,7 +82,8 @@ pub struct ModelVersion {
     #[serde(default)]
     pub files: Vec<ModelFile>,
     #[serde(default)]
-    pub images: Vec<PreviewImage>,
+    /// Image and video previews, both returned under the API's `images` field.
+    pub images: Vec<PreviewMedia>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -108,9 +109,11 @@ pub struct ModelFile {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// A discovered preview. `kind` preserves the API's `type` (for example, `image`
+/// or `video`); the URL alone is not a reliable media-type discriminator.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PreviewImage {
+pub struct PreviewMedia {
     #[serde(default)]
     pub id: Option<u64>,
     pub url: String,
@@ -127,3 +130,6 @@ pub struct PreviewImage {
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
+
+/// Backwards-compatible name for previews, which may include videos.
+pub type PreviewImage = PreviewMedia;

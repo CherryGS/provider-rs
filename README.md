@@ -13,7 +13,7 @@ stability guarantees matter.
 | Provider | Workspace crate / facade feature | Capabilities |
 | --- | --- | --- |
 | Anthropic | `provider-anthropic` / `anthropic` | Messages, token count, model list |
-| Civitai | `provider-civitai` / `civitai` | Model search, model detail, preview image |
+| Civitai | `provider-civitai` / `civitai` | Model search, model detail, preview image, preview video |
 | Codex | `provider-codex` / `codex` | OAuth, account usage, model list, Responses |
 | DeepSeek | `provider-deepseek` / `deepseek` | Chat Completions, Responses, model list, user balance |
 | Exa | `provider-exa` / `exa` | Search |
